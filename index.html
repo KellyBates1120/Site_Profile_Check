@@ -384,7 +384,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 <!-- ================================================ GOOGLE MAPS ================================================ -->
 <script>
 // ---- State ----
-let SITES = [], selected = null, filter = 'all', resolved = new Set(), checked = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false, placesService = null;
+let SITES = [], selected = null, filter = 'all', resolved = new Set(), checked = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false;
 
 // ---- Sample Data (replace with your actual fallout feed) ----
 function initData() {
@@ -676,27 +676,31 @@ function renderMapsPane(site) {
   pane.innerHTML = html;
 }
 
-// ---- Google Maps lookup ----
+// ---- Google Maps lookup (new Places API — required for accounts created after Mar 2025) ----
 async function lookupMaps(site) {
-  if (!mapsReady || !placesService) return;
-  return new Promise(resolve => {
-    const query = `${site.name} ${site.addr} ${site.city} ${site.state}`;
-    const req = { query, fields: ['name','geometry','formatted_address','formatted_phone_number'] };
-    placesService.findPlaceFromQuery(req, (results, status) => {
-      if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0]) {
-        const r = results[0];
-        const foundName = r.name || '';
-        const foundLat  = r.geometry?.location?.lat() || 0;
-        const foundLng  = r.geometry?.location?.lng() || 0;
-        const conflict  = !namesMatch(site.name, foundName);
-        mapsCache[site.id] = { found:true, conflict, name:foundName, address:r.formatted_address||'', lat:foundLat, lng:foundLng, phone:r.formatted_phone_number||'' };
-      } else {
-        mapsCache[site.id] = { found:false, conflict:false, name:'', address:'', lat:0, lng:0, phone:'' };
-      }
-      updateStats();
-      resolve();
+  if (!mapsReady) return;
+  try {
+    const query = site.name + ' ' + site.addr + ' ' + site.city + ' ' + site.state;
+    const { places } = await google.maps.places.Place.searchByText({
+      textQuery:      query,
+      fields:         ['displayName', 'location', 'formattedAddress', 'nationalPhoneNumber'],
+      maxResultCount: 1,
     });
-  });
+    if (places && places.length > 0) {
+      const p         = places[0];
+      const foundName = p.displayName || '';
+      const foundLat  = p.location ? p.location.lat() : 0;
+      const foundLng  = p.location ? p.location.lng() : 0;
+      const conflict  = !namesMatch(site.name, foundName);
+      mapsCache[site.id] = { found:true, conflict, name:foundName, address:p.formattedAddress||'', lat:foundLat, lng:foundLng, phone:p.nationalPhoneNumber||'' };
+    } else {
+      mapsCache[site.id] = { found:false, conflict:false, name:'', address:'', lat:0, lng:0, phone:'' };
+    }
+  } catch(e) {
+    console.warn('Places lookup failed:', e.message);
+    mapsCache[site.id] = { found:false, conflict:false, name:'', address:'', lat:0, lng:0, phone:'' };
+  }
+  updateStats();
 }
 
 function namesMatch(a, b) {
@@ -1110,13 +1114,8 @@ function copyText(txt,btn) { navigator.clipboard.writeText(txt).then(()=>{btn.te
 function copyElem(id,btn) { const el=document.getElementById(id); if(el)copyText(el.innerText,btn); }
 
 // ---- Google Maps init (called by script tag below) ----
+// Uses the new google.maps.places.Place API (PlacesService deprecated for new accounts Mar 2025)
 function initGoogleMaps() {
-  // Create a hidden map div (required for PlacesService)
-  const mapDiv = document.createElement('div');
-  mapDiv.style.cssText = 'position:absolute;width:1px;height:1px;visibility:hidden;';
-  document.body.appendChild(mapDiv);
-  const map = new google.maps.Map(mapDiv, { center:{lat:32,lng:-97}, zoom:10 });
-  placesService = new google.maps.places.PlacesService(map);
   mapsReady = true;
   document.getElementById('maps-dot').className='status-dot active';
   document.getElementById('maps-label').textContent='Google Maps connected';
@@ -1132,12 +1131,13 @@ initData();
 </script>
 
 <!-- Load Google Maps JS API with the key from CONFIG -->
+<!-- Uses loading=async (recommended) and the new places library -->
 <script>
 (function(){
   const key = CONFIG.GOOGLE_MAPS_API_KEY;
   if (!key || key === 'YOUR_API_KEY_HERE') { mapsError(); return; }
   const s = document.createElement('script');
-  s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=initGoogleMaps&onerror=mapsError`;
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&loading=async&callback=initGoogleMaps&onerror=mapsError';
   s.async = true; s.defer = true;
   document.head.appendChild(s);
 })();
