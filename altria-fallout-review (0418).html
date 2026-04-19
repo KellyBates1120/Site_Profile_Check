@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Altria Store Profile — Fallout Review</title>
+
+<!-- ============================================================
+     CONFIGURATION — EDIT THIS SECTION ONLY
+     ============================================================
+     1. Paste your Google Maps API key below (between the quotes)
+     2. Update RUN_ID each weekly sync run
+     3. Upload this file to GitHub Pages (see setup guide)
+
+     NOTE: Participant IDs are entered per-site during match
+     approval — the FH and SM records both use the retailer's
+     own Participant ID since Tech Ops submits on their behalf.
+     ============================================================ -->
+<script>
+  const CONFIG = {
+    GOOGLE_MAPS_API_KEY: "AIzaSyCE2AjPMh8uriapvuqLlr82tsDQZ4edzu8",
+    RUN_ID:              "SPR-2026-0418",
+    SFTP_PATH:           "/SiteImport",
+    ORG_NAME:            "PDI Technologies"
+  };
+</script>
+<!-- ============================================================ -->
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #ffffff;
+  --bg2:      #f7f7f5;
+  --bg3:      #f0efe9;
+  --border:   rgba(0,0,0,0.12);
+  --border2:  rgba(0,0,0,0.22);
+  --text:     #1a1a18;
+  --text2:    #6b6a64;
+  --text3:    #9c9a92;
+  --blue:     #185FA5;
+  --blue-bg:  #e6f1fb;
+  --blue-bd:  rgba(24,95,165,0.3);
+  --green:    #1a6b3c;
+  --green-bg: #eaf3de;
+  --green-bd: rgba(26,107,60,0.3);
+  --amber:    #7a4f0d;
+  --amber-bg: #faeeda;
+  --amber-bd: rgba(122,79,13,0.3);
+  --red:      #8b2020;
+  --red-bg:   #fcebeb;
+  --red-bd:   rgba(139,32,32,0.3);
+  --orange:   #8B3A00;
+  --mono:     'Courier New', monospace;
+  --radius:   8px;
+  --shadow:   0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:       #1c1c1a;
+    --bg2:      #252523;
+    --bg3:      #2e2e2b;
+    --border:   rgba(255,255,255,0.1);
+    --border2:  rgba(255,255,255,0.2);
+    --text:     #e8e6de;
+    --text2:    #9c9a92;
+    --text3:    #6b6a64;
+    --blue:     #7ab3e8;
+    --blue-bg:  rgba(24,95,165,0.15);
+    --blue-bd:  rgba(122,179,232,0.3);
+    --green:    #6dba8a;
+    --green-bg: rgba(26,107,60,0.15);
+    --green-bd: rgba(109,186,138,0.3);
+    --amber:    #d4a843;
+    --amber-bg: rgba(122,79,13,0.15);
+    --amber-bd: rgba(212,168,67,0.3);
+    --red:      #e07070;
+    --red-bg:   rgba(139,32,32,0.15);
+    --red-bd:   rgba(224,112,112,0.3);
+    --shadow:   0 1px 3px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(255,255,255,0.06);
+  }
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ---- Layout ---- */
+.topbar { padding: 10px 16px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--bg); }
+.topbar-brand { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.topbar-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.maps-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border2); transition: background 0.3s; }
+.status-dot.active { background: var(--green); }
+.status-dot.checking { background: var(--amber); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.stats-bar { display: grid; grid-template-columns: repeat(5,1fr); border-bottom: 0.5px solid var(--border); background: var(--border); gap: 0.5px; flex-shrink: 0; }
+.stat { background: var(--bg); padding: 8px 14px; }
+.stat-val { font-size: 20px; font-weight: 600; line-height: 1; }
+.stat-val.warn { color: var(--amber); }
+.stat-val.ok   { color: var(--green); }
+.stat-val.info { color: var(--blue); }
+.stat-val.muted{ color: var(--text3); }
+.stat-label { font-size: 10px; color: var(--text2); margin-top: 2px; text-transform: uppercase; letter-spacing: .05em; }
+
+.source-bar { display: flex; align-items: center; gap: 0; border-bottom: 0.5px solid var(--border); padding: 5px 16px; background: var(--bg2); font-size: 11px; color: var(--text2); flex-shrink: 0; flex-wrap: wrap; gap: 0; }
+.src-item { display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-right: 0.5px solid var(--border); }
+.src-item:first-child { padding-left: 0; }
+.src-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.src-altria { background: #E85D24; }
+.src-pdi    { background: #185FA5; }
+.src-gmaps  { background: #1D9E75; }
+.src-label  { font-weight: 600; color: var(--text); }
+
+.workspace { display: grid; grid-template-columns: 280px 1fr; flex: 1; overflow: hidden; }
+.queue { border-right: 0.5px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+.queue-header { padding: 8px 12px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+.queue-label { font-size: 10px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; }
+.chips { display: flex; gap: 3px; }
+.chip { padding: 2px 7px; border-radius: 20px; border: 0.5px solid var(--border2); font-size: 10px; cursor: pointer; color: var(--text2); background: transparent; transition: all .15s; }
+.chip.active, .chip:hover { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-bd); }
+.batch-bar { padding: 6px 10px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--amber-bg); display: none; }
+.batch-bar.show { display: flex; }
+.batch-bar-label { font-size: 11px; font-weight: 600; color: var(--amber); }
+
+.site-row { padding: 9px 12px; border-bottom: 0.5px solid var(--border); cursor: pointer; display: flex; align-items: flex-start; gap: 7px; transition: background .1s; }
+.site-row:hover { background: var(--bg2); }
+.site-row.active { background: var(--blue-bg); }
+.site-row.active .site-name { color: var(--blue); }
+.site-check { margin-top: 1px; width: 14px; height: 14px; cursor: pointer; accent-color: var(--blue); flex-shrink: 0; }
+.site-body { flex: 1; min-width: 0; }
+.site-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+.site-addr { font-size: 10px; color: var(--text2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.site-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.conflict-flag { font-size: 9px; color: var(--red); font-weight: 600; }
+
+/* ---- Badges ---- */
+.badge { padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+.badge.potential { background: var(--amber-bg); color: var(--amber); }
+.badge.no-match  { background: var(--red-bg);   color: var(--red); }
+.badge.resolved  { background: var(--green-bg);  color: var(--green); }
+.badge.matched   { background: var(--blue-bg);   color: var(--blue); }
+.rcn { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+
+/* ---- Detail Panel ---- */
+.detail { overflow-y: auto; display: flex; flex-direction: column; background: var(--bg); }
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text2); }
+.empty-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--bg2); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+
+.detail-header { padding: 11px 16px; border-bottom: 0.5px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-shrink: 0; }
+.detail-title { font-size: 15px; font-weight: 700; }
+.detail-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.action-group { display: flex; gap: 5px; flex-shrink: 0; align-items: center; }
+
+.tab-bar { display: flex; border-bottom: 0.5px solid var(--border); padding: 0 16px; flex-shrink: 0; overflow-x: auto; }
+.tab { padding: 8px 12px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text2); margin-bottom: -1px; white-space: nowrap; transition: color .15s; }
+.tab:hover { color: var(--text); }
+.tab.active { border-bottom-color: var(--blue); color: var(--blue); font-weight: 600; }
+.pane { display: none; flex: 1; overflow-y: auto; }
+.pane.active { display: block; }
+
+/* ---- Panels ---- */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 0.5px solid var(--border); }
+.panel { padding: 11px 16px; }
+.panel + .panel { border-left: 0.5px solid var(--border); }
+.panel-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text2); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+.field { display: flex; margin-bottom: 5px; gap: 0; }
+.fk { font-size: 11px; color: var(--text2); width: 78px; flex-shrink: 0; padding-top: 1px; }
+.fv { font-size: 12px; font-weight: 500; }
+.fv.mono { font-family: var(--mono); font-size: 10px; }
+.fv.warn { color: var(--amber); }
+.fv.ok   { color: var(--green); }
+.fv.bad  { color: var(--red); }
+
+/* ---- Confidence Bar ---- */
+.conf-wrap { display: flex; align-items: center; gap: 5px; }
+.conf-pct { font-size: 12px; font-weight: 700; }
+.conf-pct.high { color: var(--green); }
+.conf-pct.med  { color: var(--amber); }
+.conf-pct.low  { color: var(--red); }
+.conf-track { width: 52px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+.conf-fill.high { background: var(--green); }
+.conf-fill.med  { background: var(--amber); }
+.conf-fill.low  { background: var(--red); }
+
+/* ---- Signals ---- */
+.signals { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.signal { padding: 2px 6px; border-radius: 3px; font-size: 10px; border: 0.5px solid var(--border); color: var(--text2); }
+.signal.good { border-color: var(--green-bd); color: var(--green); background: var(--green-bg); }
+.signal.warn { border-color: var(--amber-bd); color: var(--amber); background: var(--amber-bg); }
+.signal.bad  { border-color: var(--red-bd);   color: var(--red);   background: var(--red-bg); }
+
+/* ---- Candidate Cards ---- */
+.cand-card { border: 0.5px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; }
+.cand-card.top-pick { border-color: var(--blue-bd); }
+.cand-head { padding: 7px 11px; background: var(--bg2); display: flex; align-items: center; justify-content: space-between; }
+.cand-head.top-pick { background: var(--blue-bg); }
+.cand-name { font-size: 12px; font-weight: 600; }
+.cand-id   { font-size: 10px; color: var(--text2); font-family: var(--mono); }
+.cand-body { padding: 8px 11px; }
+.cand-reasoning { font-size: 11px; color: var(--text2); line-height: 1.55; margin-bottom: 7px; }
+.cand-actions { display: flex; gap: 5px; }
+
+/* ---- Maps section ---- */
+.maps-section { padding: 12px 16px; }
+.maps-card { border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; }
+.maps-card.ok     { border-color: var(--green-bd); }
+.maps-card.flag   { border-color: var(--red-bd); }
+.maps-card-head   { padding: 7px 11px; background: var(--bg2); display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; }
+.maps-card-head.ok   { background: var(--green-bg); color: var(--green); }
+.maps-card-head.flag { background: var(--red-bg);   color: var(--red); }
+.maps-card-body   { padding: 9px 11px; font-size: 11px; line-height: 1.6; }
+.maps-row { display: flex; gap: 6px; margin-bottom: 3px; }
+.maps-key { color: var(--text2); width: 70px; flex-shrink: 0; }
+.maps-val { font-weight: 600; }
+.conflict-note { margin-top: 8px; padding: 7px 9px; border-radius: 5px; background: var(--red-bg); color: var(--red); font-size: 11px; line-height: 1.55; border: 0.5px solid var(--red-bd); }
+.maps-loading { padding: 14px; text-align: center; color: var(--text2); font-size: 12px; }
+.maps-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Import File ---- */
+.import-section { padding: 12px 16px; }
+.import-card { border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.import-head { padding: 7px 11px; background: var(--bg2); display: flex; align-items: center; justify-content: space-between; }
+.import-code { padding: 10px 11px; font-family: var(--mono); font-size: 10px; line-height: 1.8; overflow-x: auto; white-space: pre; background: var(--bg); border-top: 0.5px solid var(--border); }
+.import-note { margin-top: 8px; font-size: 11px; color: var(--text2); line-height: 1.5; }
+
+/* ---- Email ---- */
+.comms-section { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.email-card { border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.email-head { padding: 7px 11px; background: var(--bg2); display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; }
+.email-field { padding: 4px 11px; border-bottom: 0.5px solid var(--border); display: flex; gap: 6px; font-size: 11px; }
+.ef-label { color: var(--text2); width: 30px; flex-shrink: 0; padding-top: 1px; }
+.ef-val { font-weight: 600; }
+.email-body { padding: 9px 11px; font-size: 11px; line-height: 1.75; white-space: pre-wrap; max-height: 180px; overflow-y: auto; color: var(--text); }
+
+/* ---- Batch Modal ---- */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 200; display: none; }
+.overlay.show { display: flex; }
+.modal { background: var(--bg); border: 0.5px solid var(--border2); border-radius: 12px; width: min(96vw, 620px); max-height: 85vh; display: flex; flex-direction: column; box-shadow: var(--shadow); }
+.modal-head { padding: 14px 18px; border-bottom: 0.5px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.modal-title { font-size: 15px; font-weight: 700; }
+.modal-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.modal-foot { padding: 10px 18px; border-top: 0.5px solid var(--border); display: flex; gap: 6px; justify-content: flex-end; }
+.batch-site-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); }
+.batch-site-row:last-child { border: none; }
+.bsr-name { font-weight: 600; font-size: 12px; }
+.bsr-meta { font-size: 10px; color: var(--text2); margin-top: 1px; }
+.bsr-pdi  { font-size: 10px; color: var(--blue); font-family: var(--mono); margin-top: 1px; }
+.bsr-right { margin-left: auto; flex-shrink: 0; }
+
+/* ---- Buttons ---- */
+.btn { padding: 5px 11px; border-radius: 6px; border: 0.5px solid var(--border2); font-size: 12px; cursor: pointer; background: transparent; color: var(--text); transition: all .15s; font-family: inherit; }
+.btn:hover { background: var(--bg2); }
+.btn.primary { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-bd); }
+.btn.success { background: var(--green-bg); color: var(--green); border-color: var(--green-bd); }
+.btn.danger  { background: var(--red-bg);   color: var(--red);   border-color: var(--red-bd); }
+.btn.warning { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-bd); }
+.btn.sm { font-size: 11px; padding: 3px 8px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---- Banners / misc ---- */
+.resolved-banner { margin: 8px 16px 0; padding: 8px 11px; border-radius: 6px; background: var(--green-bg); color: var(--green); font-size: 12px; border: 0.5px solid var(--green-bd); font-weight: 500; }
+.section-head { padding: 6px 16px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text2); border-bottom: 0.5px solid var(--border); background: var(--bg2); }
+.summary-box { margin: 0 0 9px; padding: 8px 10px; border-radius: 6px; background: var(--bg2); border: 0.5px solid var(--border); font-size: 11px; line-height: 1.6; }
+.conflict-alert { margin: 0 0 9px; padding: 8px 10px; border-radius: 6px; background: var(--red-bg); border: 0.5px solid var(--red-bd); font-size: 11px; color: var(--red); line-height: 1.6; font-weight: 500; }
+.no-cands { text-align: center; padding: 20px; color: var(--text2); font-size: 12px; }
+.no-cands .icon { font-size: 22px; margin-bottom: 8px; }
+
+/* ---- Loading shimmer ---- */
+.shimmer { height: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; margin-bottom: 8px; }
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+
+<!-- ================================================ TOP BAR ================================================ -->
+<div class="topbar">
+  <div>
+    <div class="topbar-brand">Altria Store Profile — Fallout Review</div>
+    <div class="topbar-sub" id="run-label">Loading…</div>
+  </div>
+  <div class="topbar-right">
+    <div class="maps-status">
+      <div class="status-dot checking" id="maps-dot"></div>
+      <span id="maps-label">Connecting to Google Maps…</span>
+    </div>
+    <button class="btn sm" onclick="document.getElementById('csv-file-input').click()" title="Import site list from CSV">⊕ Import CSV</button>
+    <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="importCSV(this)">
+    <button class="btn sm primary" id="import-approval-btn" style="display:none" onclick="openImportApproval()">⬇ Import Approval (<span id="import-queue-count">0</span>)</button>
+  </div>
+</div>
+
+<!-- ================================================ STATS ================================================ -->
+<div class="stats-bar">
+  <div class="stat"><div class="stat-val warn" id="sv-queue">—</div><div class="stat-label">In queue</div></div>
+  <div class="stat"><div class="stat-val ok"   id="sv-resolved">0</div><div class="stat-label">Resolved</div></div>
+  <div class="stat"><div class="stat-val info"  id="sv-matched">0</div><div class="stat-label">Matched</div></div>
+  <div class="stat"><div class="stat-val muted" id="sv-imports">0</div><div class="stat-label">Downloaded</div></div>
+  <div class="stat"><div class="stat-val muted" id="sv-flags">0</div><div class="stat-label">Maps conflicts</div></div>
+</div>
+
+<!-- ================================================ SOURCE BAR ================================================ -->
+<div class="source-bar">
+  <div class="src-item"><span class="src-dot src-altria"></span><span class="src-label">Altria AGDC</span>&nbsp;— Store Profile API · RCN + address</div>
+  <div class="src-item"><span class="src-dot src-pdi"></span><span class="src-label">PDI Loyalty Host</span>&nbsp;— Internal site DB · candidates</div>
+  <div class="src-item"><span class="src-dot src-gmaps"></span><span class="src-label">Google Maps Places</span>&nbsp;— Live ground-truth verification</div>
+</div>
+
+<!-- ================================================ WORKSPACE ================================================ -->
+<div class="workspace">
+
+  <!-- Queue -->
+  <div class="queue">
+    <div class="queue-header">
+      <span class="queue-label">Queue</span>
+      <div class="chips">
+        <button class="chip active" onclick="setFilter('all',this)">All</button>
+        <button class="chip" onclick="setFilter('potential',this)">Potential</button>
+        <button class="chip" onclick="setFilter('no-match',this)">No match</button>
+      </div>
+    </div>
+    <div id="queue-list"></div>
+  </div>
+
+  <!-- Detail -->
+  <div class="detail" id="detail">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">⊙</div>
+      <div style="font-size:14px;font-weight:600">Select a site to review</div>
+      <div style="font-size:12px">Three-source matching: Altria · PDI · Google Maps</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ PARTICIPANT ID MODAL ================================================ -->
+<div class="overlay" id="pid-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <div class="modal-title">Confirm Match &amp; Enter Participant ID</div>
+      <button class="btn sm" onclick="closePidModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="pid-site-summary" style="padding:10px 12px;background:var(--bg2);border-radius:var(--radius);margin-bottom:16px;font-size:12px;line-height:1.7"></div>
+
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Retailer Participant ID <span style="color:var(--red)">*</span></label>
+        <input id="pid-input" type="text" placeholder="e.g. CK-00142 or VAL-00089" style="width:100%;padding:8px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit" oninput="validatePid()">
+        <div style="margin-top:5px;font-size:11px;color:var(--text2)">The retailer's PDI Loyalty Host Participant ID. Used in both the <strong>FH</strong> record (Tech Ops is submitting on this retailer's behalf) and the <strong>SM</strong> record (maps the site to this participant account). One file will be generated per unique Participant ID.</div>
+      </div>
+
+      <div id="pid-warning" style="display:none;padding:8px 10px;border-radius:5px;background:var(--amber-bg);border:0.5px solid var(--amber-bd);font-size:11px;color:var(--amber);margin-bottom:10px">Enter the Participant ID before confirming.</div>
+
+      <div style="padding:10px 12px;background:var(--blue-bg);border-radius:var(--radius);border:0.5px solid var(--blue-bd);font-size:11px;color:var(--blue);line-height:1.6">
+        <strong>Where to find this ID:</strong> The retailer's Participant ID is available in the PDI Loyalty Host admin portal under Participants, or in the candidate site data exported from the Loyalty Host site database. It should accompany the PDI Site ID in your candidate data feed.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closePidModal()">Cancel</button>
+      <button class="btn success" id="pid-confirm-btn" onclick="confirmMatch()">✓ Confirm &amp; add to import queue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ IMPORT APPROVAL MODAL ================================================ -->
+<div class="overlay" id="import-approval-overlay">
+  <div class="modal" style="width:min(96vw,720px)">
+    <div class="modal-head">
+      <div class="modal-title">Import Approval</div>
+      <button class="btn sm" onclick="closeImportApproval()">✕</button>
+    </div>
+    <div class="modal-body" id="import-approval-body"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeImportApproval()">Close</button>
+      <button class="btn success" id="import-download-btn" onclick="downloadImportFiles()" disabled>⬇ Download import files</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ GOOGLE MAPS ================================================ -->
+<script>
+// ---- State ----
+let SITES = [], selected = null, filter = 'all', resolved = new Set(), importQueue = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false;
+
+// ---- Persistent Maps Cache (localStorage) ----
+// Results survive page refresh and new sessions — one API call per site ever,
+// unless Tech Ops manually clears the cache for a specific site.
+const CACHE_KEY = 'altria_maps_cache_v1';
+function loadCacheFromStorage() {
+  try {
+    const stored = localStorage.getItem(CACHE_KEY);
+    if (stored) mapsCache = JSON.parse(stored);
+  } catch(e) { mapsCache = {}; }
+}
+function saveCacheToStorage() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(mapsCache)); } catch(e) {}
+}
+function clearSiteCache(siteId) {
+  delete mapsCache[siteId];
+  saveCacheToStorage();
+}
+loadCacheFromStorage();  // restore on page load
+
+// ---- Email Mapping Table ----
+const DEFAULT_EMAIL_MAPPING = {
+  'RCN-TX-48291': { retailerEmail: 'loyalty@circlek.com', amEmail: 'smitchell@yourorg.com' },
+  'RCN-TX-38811': { retailerEmail: 'pdiloyalty@7-eleven.com', amEmail: 'jokafor@yourorg.com' },
+  'RCN-TX-22719': { retailerEmail: 'loyalty@valero.com', amEmail: 'smitchell@yourorg.com' },
+  'RCN-OK-10048': { retailerEmail: 'loyalty@kumandgo.com', amEmail: 'dvasquez@yourorg.com' },
+  'RCN-TX-55102': { retailerEmail: 'loyalty@stripes.com', amEmail: 'jokafor@yourorg.com' },
+  'RCN-TX-61882': { retailerEmail: 'loyalty@egamerica.com', amEmail: 'smitchell@yourorg.com' },
+  'RCN-AR-30291': { retailerEmail: 'loyalty@murphyusa.com', amEmail: 'dvasquez@yourorg.com' },
+  'RCN-TX-49012': { retailerEmail: 'loyalty@racetrac.com', amEmail: 'jokafor@yourorg.com' }
+};
+let SITE_EMAIL_MAPPING = {};
+
+function loadEmailMapping() {
+  try {
+    const stored = localStorage.getItem('site_email_mapping');
+    SITE_EMAIL_MAPPING = stored ? { ...DEFAULT_EMAIL_MAPPING, ...JSON.parse(stored) } : { ...DEFAULT_EMAIL_MAPPING };
+  } catch(e) {
+    SITE_EMAIL_MAPPING = { ...DEFAULT_EMAIL_MAPPING };
+  }
+}
+
+function saveEmailMapping() {
+  try {
+    localStorage.setItem('site_email_mapping', JSON.stringify(SITE_EMAIL_MAPPING));
+  } catch(e) {}
+}
+
+loadEmailMapping(); // load on page load
+
+// ---- Sample Data (replace with your actual fallout feed) ----
+function initData() {
+  SITES = [
+    { id:1, rcn:'RCN-TX-48291', name:'Circle K #4421', addr:'1842 Precinct Line Rd', city:'Hurst', state:'TX', zip:'76054', lat:32.8231, lng:-97.1738, program:'LFA + P+', retailerName:'Circle K Stores Inc.', amName:'Sarah Mitchell', falloutReason:'Geo distance 210m — above 200m auto-match threshold',status:'potential',
+      candidates:[{pdiId:'PDI-44821',name:'Circle K #4421',addr:'1844 Precinct Line Rd',city:'Hurst',state:'TX',zip:'76054',dist:212,nameScore:.99,addrScore:.96},{pdiId:'PDI-44900',name:'Circle K (Hurst)',addr:'1842 Pipeline Rd',city:'Hurst',state:'TX',zip:'76054',dist:480,nameScore:.72,addrScore:.61}]},
+    { id:2, rcn:'RCN-TX-38811', name:'7-Eleven #32944', addr:'604 W Airport Fwy', city:'Irving', state:'TX', zip:'75062', lat:32.8142, lng:-97.0148, program:'LFA', retailerName:'7-Eleven Inc.', amName:'James Okafor', falloutReason:'RCN not in Loyalty Host — no prior mapping exists', status:'no-match', candidates:[]},
+    { id:3, rcn:'RCN-TX-22719', name:'Valero Corner Store', addr:'3200 Western Center Blvd', city:'Fort Worth', state:'TX', zip:'76137', lat:32.8971, lng:-97.3021, program:'P+', retailerName:'Valero Energy Corp.', amName:'Sarah Mitchell', falloutReason:'Two PDI candidates within 180m — ambiguous, manual selection required', status:'potential',
+      candidates:[{pdiId:'PDI-31100',name:'Valero Corner Store',addr:'3200 Western Center Blvd',city:'Fort Worth',state:'TX',zip:'76137',dist:45,nameScore:1.0,addrScore:1.0},{pdiId:'PDI-31101',name:'Valero (Western Ctr)',addr:'3198 Western Center Blvd',city:'Fort Worth',state:'TX',zip:'76137',dist:172,nameScore:.88,addrScore:.98}]},
+    { id:4, rcn:'RCN-OK-10048', name:'Kum & Go #218', addr:'1401 S Douglas Ave', city:'Midwest City', state:'OK', zip:'73130', lat:35.4481, lng:-97.3742, program:'LFA', retailerName:'Kum & Go LC', amName:'Derek Vasquez', falloutReason:'Street type mismatch — Altria: "Ave", PDI: "Blvd"', status:'potential',
+      candidates:[{pdiId:'PDI-88321',name:'Kum & Go #218',addr:'1401 S Douglas Blvd',city:'Midwest City',state:'OK',zip:'73130',dist:28,nameScore:1.0,addrScore:.82}]},
+    { id:5, rcn:'RCN-TX-55102', name:'Stripes #3341', addr:'501 E Main St', city:'Midland', state:'TX', zip:'79701', lat:31.9984, lng:-102.0779, program:'LFA + P+', retailerName:'Stripes LLC', amName:'James Okafor', falloutReason:'No PDI sites found within 500m search radius', status:'no-match', candidates:[]},
+    { id:6, rcn:'RCN-TX-61882', name:'Exxon Tiger Mart', addr:'9802 Harry Hines Blvd', city:'Dallas', state:'TX', zip:'75220', lat:32.8622, lng:-96.8744, program:'P+', retailerName:'EG America LLC', amName:'Sarah Mitchell', falloutReason:'Name order mismatch — PDI has "Tiger Mart Exxon"', status:'potential',
+      candidates:[{pdiId:'PDI-21049',name:'Tiger Mart Exxon',addr:'9802 Harry Hines Blvd',city:'Dallas',state:'TX',zip:'75220',dist:8,nameScore:.78,addrScore:1.0}]},
+    { id:7, rcn:'RCN-AR-30291', name:'Murphy USA #2201', addr:'4820 Central Ave', city:'Hot Springs', state:'AR', zip:'71913', program:'LFA', retailerName:'Murphy USA Inc.', amName:'Derek Vasquez', falloutReason:'ZIP code differs — Altria: 71913, PDI: 71901', status:'potential',
+      candidates:[{pdiId:'PDI-62100',name:'Murphy USA #2201',addr:'4820 Central Ave',city:'Hot Springs',state:'AR',zip:'71901',dist:60,nameScore:1.0,addrScore:.94}]},
+    { id:8, rcn:'RCN-TX-49012', name:'Racetrac #333', addr:'2100 N Collins St', city:'Arlington', state:'TX', zip:'76011', lat:32.7397, lng:-97.1142, program:'LFA + P+', retailerName:'RaceTrac Petroleum Inc.', amName:'James Okafor', falloutReason:'Coordinates returned as 0,0 in Altria payload', status:'no-match', candidates:[]}
+  ];
+  document.getElementById('run-label').textContent = `Run ID: ${CONFIG.RUN_ID} · SFTP: ${CONFIG.SFTP_PATH} · ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+  updateStats();
+  renderQueue();
+}
+
+// ---- Stats ----
+function updateStats() {
+  document.getElementById('sv-queue').textContent    = SITES.filter(s=>!resolved.has(s.id)).length;
+  document.getElementById('sv-resolved').textContent = resolved.size;
+  const pendingImport = [...importQueue].filter(id=>!resolved.has(id)).length;
+  document.getElementById('sv-matched').textContent  = pendingImport;
+  document.getElementById('sv-flags').textContent    = Object.values(mapsCache).filter(m=>m.conflict).length;
+  const btn = document.getElementById('import-approval-btn');
+  const countEl = document.getElementById('import-queue-count');
+  if (btn) btn.style.display = pendingImport > 0 ? '' : 'none';
+  if (countEl) countEl.textContent = pendingImport;
+}
+
+// ---- Queue ----
+function setFilter(val, el) { filter=val; document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderQueue(); }
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  const items = SITES.filter(s => filter==='all' || s.status===filter);
+  list.innerHTML = items.map(s => {
+    const isRes   = resolved.has(s.id);
+    const isMatch = importQueue.has(s.id) && !isRes;
+    const mc      = mapsCache[s.id];
+    const hasConflict = mc && mc.conflict;
+    let bc, bt;
+    if (isRes)               { bc='resolved';  bt='Resolved'; }
+    else if (isMatch)        { bc='matched';   bt='Matched'; }
+    else if (s.status==='potential') { bc='potential'; bt='Potential'; }
+    else                     { bc='no-match';  bt='No match'; }
+    return `<div class="site-row${selected===s.id?' active':''}" onclick="selectSite(${s.id})">
+      <div class="site-body">
+        <div class="site-name">${esc(s.name)}${hasConflict?'<span class="conflict-flag">⚠ Maps</span>':''}</div>
+        <div class="site-addr">${esc(s.addr)}, ${s.city} ${s.state}</div>
+        <div class="site-meta"><span class="badge ${bc}">${bt}</span><span class="rcn">${s.rcn}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Detail ----
+async function selectSite(id) {
+  selected = id; renderQueue();
+  const site = SITES.find(s=>s.id===id); if(!site) return;
+  buildShell(site);
+  if (mapsReady && !mapsCache[id]) await lookupMaps(site);
+  renderMatchPane(site);
+  renderMapsPane(site);
+}
+
+function buildShell(site) {
+  const tab = activeTab[site.id] || 'match';
+  const isRes    = resolved.has(site.id);
+  const isQueued = importQueue.has(site.id) && !isRes;
+  const banner = isRes
+    ? `<div class="resolved-banner">✓ Import file downloaded — site complete.</div>`
+    : isQueued
+    ? `<div class="resolved-banner" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue-bd)">✓ Match confirmed — queued for import approval. <button class="btn sm" style="margin-left:8px" onclick="openImportApproval()">Review import →</button></div>`
+    : '';
+  document.getElementById('detail').innerHTML = `
+    ${banner}
+    <div class="detail-header">
+      <div>
+        <div class="detail-title">${esc(site.name)}${mapsCache[site.id]&&mapsCache[site.id].conflict?' <span style="font-size:12px;color:var(--red);font-weight:400">⚠ Maps conflict</span>':''}</div>
+        <div class="detail-sub">${site.rcn} · ${site.program} · ${site.city}, ${site.state} · ${esc(site.retailerName)}</div>
+      </div>
+      <div class="action-group">
+        <button class="btn sm" onclick="doEscalate(${site.id})">Escalate</button>
+        <button class="btn sm" onclick="doSkip()">Skip</button>
+      </div>
+    </div>
+    <div class="tab-bar">
+      <div class="tab${tab==='match'?' active':''}" onclick="switchTab(${site.id},'match',this)">AI Analysis</div>
+      <div class="tab${tab==='maps'?' active':''}" onclick="switchTab(${site.id},'maps',this)">⬡ Maps Verify${mapsCache[site.id]&&mapsCache[site.id].conflict?' ⚠':''}</div>
+      <div class="tab${tab==='import'?' active':''}" onclick="switchTab(${site.id},'import',this)">Import File</div>
+      <div class="tab${tab==='comms'?' active':''}" onclick="switchTab(${site.id},'comms',this)">Comms</div>
+      <div class="tab${tab==='emails'?' active':''}" onclick="switchTab(${site.id},'emails',this)">Email Mapping</div>
+    </div>
+    <div class="pane${tab==='match'?' active':''}"  id="pane-match"></div>
+    <div class="pane${tab==='maps'?' active':''}"   id="pane-maps"></div>
+    <div class="pane${tab==='import'?' active':''}" id="pane-import"></div>
+    <div class="pane${tab==='comms'?' active':''}"  id="pane-comms"></div>
+    <div class="pane${tab==='emails'?' active':''}" id="pane-emails"></div>`;
+}
+
+function switchTab(siteId, tab, el) {
+  activeTab[siteId] = tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pane-'+tab).classList.add('active');
+  const site = SITES.find(s=>s.id===siteId);
+  if (tab==='import') renderImportPane(site);
+  if (tab==='comms')  renderCommsPane(site);
+  if (tab==='maps')   renderMapsPane(site);
+  if (tab==='emails') renderEmailsPane();
+}
+
+// ---- Match Pane (rule-based scoring) ----
+function renderMatchPane(site) {
+  const pane = document.getElementById('pane-match'); if(!pane) return;
+  const mc = mapsCache[site.id];
+  let html = `<div class="two-col">
+    <div class="panel">
+      <div class="panel-label"><span class="src-dot src-altria" style="width:7px;height:7px;border-radius:50%;display:inline-block"></span> Altria store profile</div>
+      <div class="field"><span class="fk">Name</span><span class="fv">${esc(site.name)}</span></div>
+      <div class="field"><span class="fk">Address</span><span class="fv">${esc(site.addr)}</span></div>
+      <div class="field"><span class="fk">City/State</span><span class="fv">${site.city}, ${site.state} ${site.zip}</span></div>
+      <div class="field"><span class="fk">Coords</span><span class="fv mono">${site.lat||'—'}, ${site.lng||'—'}</span></div>
+      <div class="field"><span class="fk">Programs</span><span class="fv">${site.program}</span></div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">Fallout details</div>
+      <div class="field"><span class="fk">Reason</span><span class="fv warn" style="font-size:11px">${esc(site.falloutReason)}</span></div>
+      <div class="field" style="margin-top:5px"><span class="fk">Candidates</span><span class="fv">${site.candidates.length} found</span></div>
+      <div class="field"><span class="fk">Maps</span><span class="fv ${!mc?'':'mc&&mc.conflict?\'bad\':\'ok\''}">${!mc?'Pending…':mc.conflict?'⚠ Conflict':'✓ Verified'}</span></div>
+      <div class="field"><span class="fk">AM</span><span class="fv">${esc(site.amName)}</span></div>
+    </div>
+  </div>
+  <div style="padding:11px 16px">
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Match recommendations</div>`;
+
+  if (mc && mc.conflict) {
+    html += `<div class="conflict-alert">⚠ Google Maps conflict — a different business was found at this address. Review the Maps Verify tab before approving any match.</div>`;
+  }
+
+  if (site.candidates.length === 0) {
+    html += `<div class="no-cands"><div class="icon">◉</div><div style="font-weight:600;margin-bottom:4px">No PDI candidates found</div><div style="margin-bottom:12px;font-size:11px">No PDI Loyalty Host sites found within the search radius. Recommend sending an AM alert to investigate whether this site needs to be onboarded.</div><div style="display:flex;gap:6px;justify-content:center"><button class="btn primary" onclick="sendAMAlert(${site.id})">Send AM alert</button><button class="btn" onclick="doEscalate(${site.id})">Escalate</button></div></div>`;
+  } else {
+    const scored = site.candidates.map(c => scoreCandidate(site, c, mc));
+    scored.sort((a,b)=>b.score-a.score);
+    const summary = buildSummary(site, scored[0], mc);
+    html += `<div class="summary-box">${summary}</div>`;
+    scored.forEach((sc, i) => {
+      const top = i===0;
+      const confClass = sc.score>=75?'high':sc.score>=50?'med':'low';
+      html += `<div class="cand-card${top?' top-pick':''}">
+        <div class="cand-head${top?' top-pick':''}">
+          <div><div class="cand-name">${esc(sc.c.name)}</div><div class="cand-id">${sc.c.pdiId}</div></div>
+          <div class="conf-wrap">
+            <span class="conf-pct ${confClass}">${sc.score}%</span>
+            <div class="conf-track"><div class="conf-fill ${confClass}" style="width:${sc.score}%"></div></div>
+          </div>
+        </div>
+        <div class="cand-body">
+          <div class="signals">${sc.signals.map(s=>`<span class="signal ${s.t}">${s.l}</span>`).join('')}</div>
+          <div class="cand-reasoning">${sc.reasoning}</div>
+          <div class="cand-actions">
+            <button class="btn sm success" onclick="approveMatch(${site.id},'${sc.c.pdiId}',${JSON.stringify(sc.c.name).replace(/"/g,'&quot;')})">✓ Approve &amp; generate files</button>
+            <button class="btn sm" onclick="this.closest('.cand-card').style.opacity='.35';this.closest('.cand-card').style.pointerEvents='none'">Reject</button>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  pane.innerHTML = html;
+}
+
+// ---- Rule-based scorer ----
+function scoreCandidate(site, c, mc) {
+  let score = 0; const signals = []; let reasoning = '';
+
+  // Geo distance (max 35 pts)
+  if (c.dist <= 75)       { score+=35; signals.push({l:`Geo: ${c.dist}m ✓`,t:'good'}); }
+  else if (c.dist <= 200) { score+=20; signals.push({l:`Geo: ${c.dist}m (near threshold)`,t:'warn'}); }
+  else if (c.dist <= 400) { score+=8;  signals.push({l:`Geo: ${c.dist}m (over threshold)`,t:'bad'}); }
+  else                    { score+=0;  signals.push({l:`Geo: ${c.dist}m (far)`,t:'bad'}); }
+
+  // Name similarity (max 35 pts)
+  const namePct = Math.round(c.nameScore*100);
+  if (namePct>=95)      { score+=35; signals.push({l:`Name: ${namePct}% match`,t:'good'}); }
+  else if (namePct>=80) { score+=22; signals.push({l:`Name: ${namePct}% match`,t:'warn'}); }
+  else                  { score+=8;  signals.push({l:`Name: ${namePct}% match`,t:'bad'}); }
+
+  // Address similarity (max 20 pts)
+  const addrPct = Math.round(c.addrScore*100);
+  if (addrPct>=95)      { score+=20; signals.push({l:`Addr: ${addrPct}%`,t:'good'}); }
+  else if (addrPct>=80) { score+=12; signals.push({l:`Addr: ${addrPct}%`,t:'warn'}); }
+  else                  { score+=4;  signals.push({l:`Addr: ${addrPct}%`,t:'bad'}); }
+
+  // Google Maps verification (max 10 pts, -20 if conflict)
+  if (mc) {
+    if (mc.conflict) { score = Math.max(score-20, 5); signals.push({l:'Maps: conflict ⚠',t:'bad'}); }
+    else if (mc.found) { score = Math.min(score+10, 98); signals.push({l:'Maps: verified ✓',t:'good'}); }
+    else signals.push({l:'Maps: not found',t:'warn'});
+  }
+
+  score = Math.min(Math.max(Math.round(score),1),98);
+
+  // Build reasoning
+  const parts = [];
+  if (c.dist<=75) parts.push(`Geo distance of ${c.dist}m is within the 75m auto-match threshold.`);
+  else parts.push(`Geo distance of ${c.dist}m exceeds the auto-match threshold, which triggered the fallout.`);
+  if (namePct>=95) parts.push(`Store name is an exact match.`);
+  else if (namePct>=80) parts.push(`Store name similarity of ${namePct}% is strong despite minor variation.`);
+  else parts.push(`Store name similarity of ${namePct}% is below the reliable match threshold.`);
+  if (mc && mc.conflict) parts.push(`Google Maps found a different business at this address — manual verification is recommended before approving.`);
+  else if (mc && mc.found) parts.push(`Google Maps independently confirms this business at the location.`);
+  reasoning = parts.join(' ');
+
+  return { c, score, signals, reasoning };
+}
+
+function buildSummary(site, top, mc) {
+  if (!top) return `No candidates to evaluate for this site.`;
+  const conf = top.score>=75?'high confidence':top.score>=50?'moderate confidence':'low confidence';
+  let s = `Best candidate is <strong>${esc(top.c.name)}</strong> (${top.c.pdiId}) with <strong>${top.score}% ${conf}</strong>. `;
+  s += `The fallout was triggered because ${site.falloutReason.toLowerCase()}.`;
+  if (mc && mc.conflict) s += ` ⚠ Google Maps shows a different business at this address — review the Maps Verify tab.`;
+  return s;
+}
+
+// ---- Google Maps Pane ----
+function renderMapsPane(site) {
+  const pane = document.getElementById('pane-maps'); if(!pane) return;
+  const mc = mapsCache[site.id];
+  const mc_cached = mapsCache[site.id];
+  const cachedAt = mc_cached && mc_cached.cachedAt ? new Date(mc_cached.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
+  let html = `<div class="maps-section">
+    <div class="panel-label" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+      <span><span class="src-dot src-gmaps" style="width:7px;height:7px;border-radius:50%;display:inline-block"></span> Google Maps Places — live ground-truth lookup</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        ${cachedAt ? `<span style="font-size:10px;color:var(--text2)">Cached ${cachedAt}</span>` : ''}
+        ${mc_cached ? `<button class="btn sm" onclick="refreshMapsLookup(${site.id})" style="font-size:10px;padding:2px 7px">↻ Refresh</button>` : ''}
+      </span>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6">Results are cached locally in your browser — Google Places is only called once per site. Click Refresh to force a new lookup for this site.</p>`;
+
+  if (!mapsReady) {
+    html += `<div style="padding:14px;text-align:center;font-size:12px;color:var(--text2);border:0.5px solid var(--border);border-radius:var(--radius)">Google Maps API not connected. Add your API key to the CONFIG section at the top of the HTML file.</div>`;
+  } else if (!mc) {
+    html += `<div class="maps-loading"><span class="maps-spinner"></span>Looking up business on Google Maps…</div>`;
+    lookupMaps(site).then(() => { renderMapsPane(site); renderMatchPane(site); buildShell(site); updateStats(); });
+  } else if (mc.found && !mc.conflict) {
+    html += `<div class="maps-card ok">
+      <div class="maps-card-head ok">✓ Business confirmed at this address</div>
+      <div class="maps-card-body">
+        <div class="maps-row"><span class="maps-key">Found name</span><span class="maps-val">${esc(mc.name)}</span></div>
+        <div class="maps-row"><span class="maps-key">Address</span><span class="maps-val">${esc(mc.address)}</span></div>
+        <div class="maps-row"><span class="maps-key">Coordinates</span><span class="maps-val" style="font-family:var(--mono);font-size:10px">${mc.lat?.toFixed(5)}, ${mc.lng?.toFixed(5)}</span></div>
+        <div class="maps-row"><span class="maps-key">Altria coords</span><span class="maps-val" style="font-family:var(--mono);font-size:10px">${site.lat||'—'}, ${site.lng||'—'}</span></div>
+        ${mc.phone?`<div class="maps-row"><span class="maps-key">Phone</span><span class="maps-val">${esc(mc.phone)}</span></div>`:''}
+        <div style="margin-top:8px;font-size:11px;color:var(--green)">Google Maps independently confirms this business is operating at this location. Safe to approve a match.</div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn sm success" onclick="approveFromMaps(${site.id})">✓ Approve Top Match</button>
+        </div>
+      </div>
+    </div>`;
+  } else if (mc.found && mc.conflict) {
+    html += `<div class="maps-card flag">
+      <div class="maps-card-head flag">⚠ Conflict — different business found at this address</div>
+      <div class="maps-card-body">
+        <div class="maps-row"><span class="maps-key">Altria says</span><span class="maps-val">${esc(site.name)}</span></div>
+        <div class="maps-row"><span class="maps-key">Google found</span><span class="maps-val" style="color:var(--red)">${esc(mc.name)}</span></div>
+        <div class="maps-row"><span class="maps-key">At address</span><span class="maps-val">${esc(mc.address)}</span></div>
+        ${mc.phone?`<div class="maps-row"><span class="maps-key">Phone</span><span class="maps-val">${esc(mc.phone)}</span></div>`:''}
+        <div class="conflict-note">This may indicate the store has closed, relocated, or been rebranded since Altria last updated its records. Do not approve a match without manual verification.</div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn sm warning" onclick="doEscalate(${site.id})">Escalate for manual check</button>
+          <button class="btn sm" onclick="approveAnyway(${site.id})">Override &amp; proceed</button>
+        </div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="maps-card">
+      <div class="maps-card-head">No result found on Google Maps</div>
+      <div class="maps-card-body" style="font-size:11px;color:var(--text2)">No business matching this name and address was found. This may indicate a newly opened location, a data error, or a site operating under a different trade name. Recommend manual verification before approving any match.</div>
+    </div>`;
+  }
+
+  html += `<div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.6"><strong>How this works:</strong> The matching engine calls <code style="font-family:var(--mono);font-size:10px;background:var(--bg2);padding:1px 4px;border-radius:3px">places.findPlaceFromQuery()</code> with the Altria store name and address. The returned coordinates become a third geo-match signal. If the returned business name differs significantly from the Altria name, the site is flagged as a conflict.</div>
+  </div>`;
+  pane.innerHTML = html;
+}
+
+// ---- Google Maps lookup (new Places API — required for accounts created after Mar 2025) ----
+// Manually force a fresh Maps lookup for a site, clearing the cache first
+async function refreshMapsLookup(siteId) {
+  const site = SITES.find(s=>s.id===siteId);
+  if (!site) return;
+  clearSiteCache(siteId);
+  const pane = document.getElementById('pane-maps');
+  if (pane) pane.innerHTML = '<div class="maps-loading"><span class="maps-spinner"></span>Refreshing from Google Maps…</div>';
+  await lookupMaps(site);
+  renderMapsPane(site);
+  renderMatchPane(site);
+  updateStats();
+}
+
+async function lookupMaps(site) {
+  if (!mapsReady) return;
+  try {
+    const query = site.name + ' ' + site.addr + ' ' + site.city + ' ' + site.state;
+    const { places } = await google.maps.places.Place.searchByText({
+      textQuery:      query,
+      fields:         ['displayName', 'location', 'formattedAddress', 'nationalPhoneNumber'],
+      maxResultCount: 1,
+    });
+    if (places && places.length > 0) {
+      const p         = places[0];
+      const foundName = p.displayName || '';
+      const foundLat  = p.location ? p.location.lat() : 0;
+      const foundLng  = p.location ? p.location.lng() : 0;
+      const conflict  = !namesMatch(site.name, foundName);
+      mapsCache[site.id] = { found:true, conflict, name:foundName, address:p.formattedAddress||'', lat:foundLat, lng:foundLng, phone:p.nationalPhoneNumber||'', cachedAt: new Date().toISOString() };
+    } else {
+      mapsCache[site.id] = { found:false, conflict:false, name:'', address:'', lat:0, lng:0, phone:'', cachedAt: new Date().toISOString() };
+    }
+  } catch(e) {
+    console.warn('Places lookup failed:', e.message);
+    mapsCache[site.id] = { found:false, conflict:false, name:'', address:'', lat:0, lng:0, phone:'', cachedAt: new Date().toISOString() };
+  }
+  saveCacheToStorage();  // persist so we never re-query this site unnecessarily
+  updateStats();
+}
+
+function namesMatch(a, b) {
+  // Tokenize and check word overlap — handles "Circle K #4421" vs "Circle K"
+  const tok = s => s.toLowerCase().replace(/[^a-z0-9\s]/g,'').split(/\s+/).filter(Boolean);
+  const ta = new Set(tok(a)), tb = new Set(tok(b));
+  let overlap = 0;
+  ta.forEach(w => { if (tb.has(w)) overlap++; });
+  const score = overlap / Math.max(ta.size, tb.size);
+  return score >= 0.45; // 45% word overlap = same business
+}
+
+// ---- Import File ----
+function renderImportPane(site) {
+  const pane = document.getElementById('pane-import'); if(!pane) return;
+  const pdi = site._approvedPdi;
+  if (!pdi) {
+    pane.innerHTML=`<div style="padding:24px;text-align:center;color:var(--text2);font-size:12px"><div style="font-size:22px;margin-bottom:8px">⊙</div><div style="font-weight:600;margin-bottom:4px">No match approved yet</div>Approve a candidate on the AI Analysis tab to auto-generate the Site Import file.<br><span style="font-size:11px;margin-top:4px;display:block">You will be prompted to enter the retailer's Participant ID before the file is generated.</span></div>`;
+    return;
+  }
+
+  const participantId = site._participantId || '';
+  const today=new Date();
+  const ds=`${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+  const fname=`SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${site.rcn.replace(/-/g,'')}_001`;
+  const tags=['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
+
+  // FH and SM both use the retailer's participant ID
+  // Tech Ops submits on behalf of the retailer — FH identifies who the file is for
+  const buildRaw = (pid) =>
+    `RecordType=FH|${pid}|1|\n` +
+    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
+    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
+    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
+    `RecordType=SG|ADD|${tags}|\n` +
+    `RecordType=ST|\n` +
+    `RecordType=FT|`;
+
+  const raw = buildRaw(participantId || 'PARTICIPANT-ID-REQUIRED');
+  const missingId = !participantId;
+
+  pane.innerHTML=`<div class="import-section">
+
+    <!-- Participant ID row -->
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);border:0.5px solid ${missingId?'var(--red-bd)':'var(--green-bd)'};background:${missingId?'var(--red-bg)':'var(--green-bg)'};margin-bottom:12px">
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${missingId?'var(--red)':'var(--green)'};margin-bottom:4px">Retailer Participant ID <span style="font-size:9px">(FH + SM records)</span></div>
+        <input id="import-pid-${site.id}" type="text" value="${esc(participantId)}" placeholder="Enter Participant ID…"
+          style="width:100%;padding:5px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-family:var(--mono)"
+          oninput="updateImportPid(${site.id}, this.value)">
+        <div style="font-size:10px;color:${missingId?'var(--red)':'var(--text2)'};margin-top:3px">${missingId?'⚠ Required — used in FH (submitting on behalf of this retailer) and SM (site mapping) records.':'Used in the FH record (submitting on this retailer\'s behalf) and SM record (site mapping). One file per Participant ID.'}</div>
+        <div id="pid-conflict-${site.id}" style="display:none;font-size:10px;color:var(--red);margin-top:4px;line-height:1.5;padding:5px 7px;background:var(--red-bg);border-radius:4px;border:0.5px solid var(--red-bd)"></div>
+      </div>
+    </div>
+
+    <!-- File header row -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:12px;font-weight:600">${fname}</span>
+      <div style="display:flex;gap:5px">
+        <button class="btn sm" id="copy-import-${site.id}" onclick="copyImportFile(${site.id})" ${missingId?'disabled':''}>Copy</button>
+        <button class="btn sm primary" onclick="openImportApproval()">Review in Import Approval →</button>
+      </div>
+    </div>
+
+    <div class="import-card">
+      <div class="import-head"><span style="font-size:10px;font-family:var(--mono)">${fname}</span></div>
+      <div class="import-code" id="import-code-${site.id}">${esc(raw)}</div>
+    </div>
+    <div class="import-note" style="margin-top:8px">
+      <strong>FH</strong> (retailer: <span id="import-pid-label-${site.id}" style="font-family:var(--mono)">${participantId||'—'}</span>) ·
+      <strong>SH</strong> (PDI site: ${pdi.pdiId}) ·
+      <strong>SA</strong> (address + lat/lng) ·
+      <strong>SM</strong> (retailer: <span style="font-family:var(--mono)">${participantId||'—'}</span> → ${pdi.pdiId}) ·
+      <strong>SG</strong> (${tags}) ·
+      <strong>ST/FT</strong>. Use Import Approval to download and submit this file.
+    </div>
+  </div>`;
+}
+
+function updateImportPid(siteId, value) {
+  const site = SITES.find(s=>s.id===siteId);
+  const trimmed = value.trim();
+
+  // Validate before saving — PDI site ID must not be assigned to a different participant elsewhere
+  const conflictMsg = trimmed && site._approvedPdi
+    ? checkParticipantConflict(siteId, site._approvedPdi.pdiId, trimmed)
+    : null;
+
+  // Show or clear the conflict warning beneath the input
+  let warnEl = document.getElementById(`pid-conflict-${siteId}`);
+  if (warnEl) {
+    warnEl.textContent = conflictMsg || '';
+    warnEl.style.display = conflictMsg ? 'block' : 'none';
+  }
+
+  // Block save if there's a conflict
+  const copyBtn = document.getElementById(`copy-import-${siteId}`);
+  const sftpBtn = copyBtn?.nextElementSibling;
+  const blocked = !trimmed || !!conflictMsg;
+  if (copyBtn) copyBtn.disabled = blocked;
+  if (sftpBtn) sftpBtn.disabled = blocked;
+
+  if (conflictMsg) return; // Don't update the site or regenerate the file
+
+  site._participantId = trimmed;
+  const pdi  = site._approvedPdi;
+  const pid  = trimmed || 'PARTICIPANT-ID-REQUIRED';
+  const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
+  const raw =
+    `RecordType=FH|${pid}|1|\n` +
+    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
+    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
+    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
+    `RecordType=SG|ADD|${tags}|\n` +
+    `RecordType=ST|\n` +
+    `RecordType=FT|`;
+  const codeEl = document.getElementById(`import-code-${siteId}`);
+  if (codeEl) codeEl.textContent = raw;
+  const lblEl  = document.getElementById(`import-pid-label-${siteId}`);
+  if (lblEl) lblEl.textContent = trimmed || '—';
+}
+
+function copyImportFile(siteId) {
+  const codeEl = document.getElementById(`import-code-${siteId}`);
+  if (codeEl) copyText(codeEl.textContent, document.getElementById(`copy-import-${siteId}`));
+}
+
+// ---- Comms ----
+function renderCommsPane(site) {
+  const pane = document.getElementById('pane-comms'); if(!pane) return;
+  const pdi=site._approvedPdi; const noMatch=!site.candidates.length;
+  const emails = SITE_EMAIL_MAPPING[site.rcn] || { retailerEmail: 'default@retailer.com', amEmail: 'default@am.com' };
+  const retSubj = pdi?`Altria Program Site Enrollment Confirmed — ${site.name}, ${site.city} ${site.state}`:`Action Required — Altria Site Enrollment Pending for ${site.name}`;
+  const retBody = pdi
+    ?`Dear ${site.retailerName} Loyalty Team,\n\nYour site below has been successfully enrolled in the Altria ${site.program} program through the PDI Loyalty Host.\n\nStore:      ${site.name}\nAddress:    ${site.addr}, ${site.city}, ${site.state} ${site.zip}\nAltria RCN: ${site.rcn}\nPDI Site ID:${pdi.pdiId}\nProgram(s): ${site.program}\n\nNo further action is required. Offer eligibility and fund allowance processing will begin per the standard Altria program schedule.\n\nIf you have questions, please contact your PDI Account Manager.\n\nThank you,\n${CONFIG.ORG_NAME} — Loyalty Host Operations`
+    :`Dear ${site.retailerName} Loyalty Team,\n\nWe are following up regarding the Altria ${site.program} enrollment request for your site below. Our automated system was unable to locate a matching record in PDI Loyalty Host for this location.\n\nStore:      ${site.name}\nAddress:    ${site.addr}, ${site.city}, ${site.state} ${site.zip}\nAltria RCN: ${site.rcn}\n\nYour dedicated PDI Account Manager will be in touch within 2 business days to verify the site information and coordinate next steps. No action is required from you at this time.\n\nThank you for your patience,\n${CONFIG.ORG_NAME} — Loyalty Host Operations`;
+  const amSubj=`[INTERNAL] Altria Fallout — ${pdi?'Resolved':'Action Required'}: ${site.name} (${site.rcn})`;
+  const amBody = pdi
+    ?`Hi ${site.amName.split(' ')[0]},\n\nFallout case resolved by Tech Ops.\n\nSite:      ${site.name} (${site.rcn})\nRetailer:  ${site.retailerName}\nMatched →  ${pdi.pdiId} (${pdi.name})\nPrograms:  ${site.program}\nRun ID:    ${CONFIG.RUN_ID}\n\nSite Import file queued for SFTP drop. Retailer notified. No action required unless the retailer contacts you.\n\n— Automated Fallout Review System`
+    :`Hi ${site.amName.split(' ')[0]},\n\nAction required — Altria fallout case with no PDI match found.\n\nSite:      ${site.name} (${site.rcn})\nRetailer:  ${site.retailerName} (${emails.retailerEmail})\nAddress:   ${site.addr}, ${site.city}, ${site.state} ${site.zip}\nPrograms:  ${site.program}\nRun ID:    ${CONFIG.RUN_ID}\nReason:    ${site.falloutReason}\n\nSuggested next steps:\n  1. Verify whether this site exists in PDI Loyalty Host under a different ID or address.\n  2. If newly opened, coordinate with the retailer to complete onboarding.\n  3. Once resolved, use the tool to generate and SFTP a Site Import file.\n\nThe retailer has been notified to expect your contact within 2 business days.\n\n— Automated Fallout Review System`;
+  pane.innerHTML=`<div class="comms-section">
+    <div class="email-card">
+      <div class="email-head">✉ Retailer — ${esc(site.retailerName)}<button class="btn sm" onclick="copyElem('retbody-${site.id}',this)" style="margin-left:auto">Copy</button></div>
+      <div class="email-field"><span class="ef-label">To</span><span class="ef-val">${esc(emails.retailerEmail)}</span></div>
+      <div class="email-field"><span class="ef-label">Re</span><span class="ef-val">${esc(retSubj)}</span></div>
+      <div class="email-body" id="retbody-${site.id}">${esc(retBody)}</div>
+    </div>
+    <div class="email-card">
+      <div class="email-head">🔒 Internal — ${esc(site.amName)}<button class="btn sm" onclick="copyElem('ambody-${site.id}',this)" style="margin-left:auto">Copy</button></div>
+      <div class="email-field"><span class="ef-label">To</span><span class="ef-val">${esc(emails.amEmail)}</span></div>
+      <div class="email-field"><span class="ef-label">Re</span><span class="ef-val">${esc(amSubj)}</span></div>
+      <div class="email-body" id="ambody-${site.id}">${esc(amBody)}</div>
+    </div>
+  </div>`;
+}
+
+// ---- Email Mapping Management ----
+function renderEmailsPane() {
+  const pane = document.getElementById('pane-emails'); if(!pane) return;
+  let html = `<div class="email-mapping-section">
+    <div class="panel-label">Manage Email Mappings</div>
+    <div id="mapping-list">`;
+  for (const [rcn, emails] of Object.entries(SITE_EMAIL_MAPPING)) {
+    html += `<div class="mapping-row" style="display:flex;align-items:center;padding:8px;border-bottom:0.5px solid var(--border);">
+      <div style="flex:1;font-family:var(--mono);font-size:11px">${rcn}</div>
+      <div style="flex:2;font-size:11px">${emails.retailerEmail}</div>
+      <div style="flex:2;font-size:11px">${emails.amEmail}</div>
+      <div style="display:flex;gap:4px">
+        <button class="btn sm" onclick="editMapping('${rcn}')">Edit</button>
+        <button class="btn sm danger" onclick="deleteMapping('${rcn}')">Delete</button>
+      </div>
+    </div>`;
+  }
+  html += `</div>
+    <button class="btn" onclick="showAddMapping()" style="margin-top:12px">Add New Mapping</button>
+    <div id="mapping-form" style="display:none;margin-top:12px;padding:12px;border:0.5px solid var(--border);border-radius:var(--radius);background:var(--bg2)">
+      <div style="margin-bottom:8px"><label>RCN: <input id="form-rcn" type="text" style="width:100%;padding:4px;border:0.5px solid var(--border);border-radius:4px"></label></div>
+      <div style="margin-bottom:8px"><label>Retailer Email: <input id="form-retailer" type="email" style="width:100%;padding:4px;border:0.5px solid var(--border);border-radius:4px"></label></div>
+      <div style="margin-bottom:8px"><label>AM Email: <input id="form-am" type="email" style="width:100%;padding:4px;border:0.5px solid var(--border);border-radius:4px"></label></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn success" id="form-save-btn" onclick="saveMapping()">Save</button>
+        <button class="btn" onclick="cancelMapping()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+  pane.innerHTML = html;
+}
+
+function showAddMapping() {
+  document.getElementById('form-rcn').value = '';
+  document.getElementById('form-retailer').value = '';
+  document.getElementById('form-am').value = '';
+  document.getElementById('form-save-btn').onclick = () => addMapping();
+  document.getElementById('mapping-form').style.display = 'block';
+}
+
+function editMapping(rcn) {
+  const emails = SITE_EMAIL_MAPPING[rcn];
+  document.getElementById('form-rcn').value = rcn;
+  document.getElementById('form-retailer').value = emails.retailerEmail;
+  document.getElementById('form-am').value = emails.amEmail;
+  document.getElementById('form-save-btn').onclick = () => updateMapping(rcn);
+  document.getElementById('mapping-form').style.display = 'block';
+}
+
+function cancelMapping() {
+  document.getElementById('mapping-form').style.display = 'none';
+}
+
+function addMapping() {
+  const rcn = document.getElementById('form-rcn').value.trim();
+  const retailer = document.getElementById('form-retailer').value.trim();
+  const am = document.getElementById('form-am').value.trim();
+  if (!rcn || !retailer || !am) return alert('All fields required');
+  if (SITE_EMAIL_MAPPING[rcn]) return alert('RCN already exists');
+  SITE_EMAIL_MAPPING[rcn] = { retailerEmail: retailer, amEmail: am };
+  saveEmailMapping();
+  renderEmailsPane();
+  cancelMapping();
+}
+
+function updateMapping(oldRcn) {
+  const rcn = document.getElementById('form-rcn').value.trim();
+  const retailer = document.getElementById('form-retailer').value.trim();
+  const am = document.getElementById('form-am').value.trim();
+  if (!rcn || !retailer || !am) return alert('All fields required');
+  if (rcn !== oldRcn && SITE_EMAIL_MAPPING[rcn]) return alert('RCN already exists');
+  delete SITE_EMAIL_MAPPING[oldRcn];
+  SITE_EMAIL_MAPPING[rcn] = { retailerEmail: retailer, amEmail: am };
+  saveEmailMapping();
+  renderEmailsPane();
+  cancelMapping();
+}
+
+function deleteMapping(rcn) {
+  if (confirm(`Delete mapping for ${rcn}?`)) {
+    delete SITE_EMAIL_MAPPING[rcn];
+    saveEmailMapping();
+    renderEmailsPane();
+  }
+}
+
+function approveFromMaps(siteId) {
+  const site = SITES.find(s=>s.id===siteId);
+  if (!site.candidates.length) {
+    alert('No PDI candidates available to approve.');
+    return;
+  }
+  const mc = mapsCache[siteId];
+  const scored = site.candidates.map(c => scoreCandidate(site, c, mc));
+  scored.sort((a,b)=>b.score-a.score);
+  const top = scored[0].c;
+  approveMatch(siteId, top.pdiId, top.name);
+}
+
+// ---- Participant ID Modal ----
+let _pendingApproval = null;
+
+function approveMatch(siteId, pdiId, pdiName) {
+  const site = SITES.find(s=>s.id===siteId);
+  _pendingApproval = { siteId, pdiId, pdiName };
+
+  // Pre-fill if we already have a participant ID for this site
+  document.getElementById('pid-input').value = site._participantId || '';
+  document.getElementById('pid-warning').style.display = 'none';
+
+  // Build summary card
+  document.getElementById('pid-site-summary').innerHTML =
+    `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+       <div><strong>${esc(site.name)}</strong><div style="color:var(--text2);font-size:11px;margin-top:1px">${site.rcn} · ${site.program}</div></div>
+       <span class="badge potential" style="flex-shrink:0">Pending ID</span>
+     </div>
+     <div style="border-top:0.5px solid var(--border);padding-top:8px;margin-top:4px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px">
+       <div><span style="color:var(--text2)">Altria addr: </span>${esc(site.addr)}, ${site.city} ${site.state}</div>
+       <div><span style="color:var(--text2)">Retailer: </span>${esc(site.retailerName)}</div>
+       <div><span style="color:var(--text2)">PDI Site ID: </span><span style="font-family:var(--mono)">${esc(pdiId)}</span></div>
+       <div><span style="color:var(--text2)">PDI Name: </span>${esc(pdiName)}</div>
+     </div>`;
+
+  document.getElementById('pid-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('pid-input').focus(), 100);
+}
+
+function validatePid() {
+  const val = document.getElementById('pid-input').value.trim();
+  document.getElementById('pid-warning').style.display = val ? 'none' : 'block';
+  document.getElementById('pid-confirm-btn').disabled = !val;
+}
+
+function closePidModal() {
+  document.getElementById('pid-overlay').classList.remove('show');
+  _pendingApproval = null;
+}
+
+function confirmMatch() {
+  const participantId = document.getElementById('pid-input').value.trim();
+  if (!participantId) { document.getElementById('pid-warning').style.display='block'; return; }
+  const { siteId, pdiId, pdiName } = _pendingApproval;
+
+  // Validate: this PDI Site ID must not already be assigned to a different Participant ID
+  const conflict = checkParticipantConflict(siteId, pdiId, participantId);
+  if (conflict) {
+    document.getElementById('pid-warning').textContent = conflict;
+    document.getElementById('pid-warning').style.display = 'block';
+    return;
+  }
+
+  const site = SITES.find(s=>s.id===siteId);
+  site._approvedPdi   = { pdiId, name: pdiName };
+  site._participantId = participantId;
+  importQueue.add(siteId);
+  closePidModal();
+  updateStats(); renderQueue(); buildShell(site);
+  renderMatchPane(site);
+}
+
+// A PDI Site ID can only belong to one Participant ID.
+// If this site's matched PDI Site ID is already assigned to a different
+// Participant ID on another resolved site, that's a data integrity violation.
+function checkParticipantConflict(siteId, pdiId, newParticipantId) {
+  const conflictingSite = SITES.find(s =>
+    s.id !== siteId &&
+    s._approvedPdi?.pdiId === pdiId &&
+    s._participantId &&
+    s._participantId !== newParticipantId
+  );
+  if (conflictingSite) {
+    return `⚠ Conflict: PDI site ${pdiId} is already assigned to Participant ID "${conflictingSite._participantId}" on site ${conflictingSite.rcn} (${conflictingSite.name}). A site can only belong to one participant. Verify the correct ID before proceeding.`;
+  }
+  return null;
+}
+
+function approveAnyway(siteId) {
+  const site = SITES.find(s=>s.id===siteId);
+  if (site.candidates.length) {
+    const best = site.candidates.reduce((a,b)=>a.nameScore+a.addrScore>b.nameScore+b.addrScore?a:b);
+    approveMatch(siteId, best.pdiId, best.name);
+  }
+}
+
+function sendAMAlert(id) { activeTab[id]='comms'; const s=SITES.find(x=>x.id===id); buildShell(s); document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===3)); document.querySelectorAll('.pane').forEach((p,i)=>p.classList.toggle('active',i===3)); renderCommsPane(s); }
+function doEscalate(id) { const s=SITES.find(x=>x.id===id); alert(`Site ${s.rcn} escalated to senior Tech Ops.\nExcluded from automated processing until manually resolved.`); }
+function doSkip() { selected=null; document.getElementById('detail').innerHTML=document.getElementById('empty-state').outerHTML; renderQueue(); }
+
+// ---- Import Approval ----
+function openImportApproval() {
+  const pending = SITES.filter(s => importQueue.has(s.id) && !resolved.has(s.id));
+  if (!pending.length) {
+    alert('No sites are queued for import yet. Approve a match on the AI Analysis tab to add sites to the import queue.');
+    return;
+  }
+  renderImportApprovalBody(pending);
+  document.getElementById('import-approval-overlay').classList.add('show');
+}
+
+function closeImportApproval() {
+  document.getElementById('import-approval-overlay').classList.remove('show');
+}
+
+function renderImportApprovalBody(pending) {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+
+  // Group by participant ID
+  const byPid = {};
+  pending.forEach(s => {
+    const pid = s._participantId;
+    if (!byPid[pid]) byPid[pid] = [];
+    byPid[pid].push(s);
+  });
+
+  let html = `<p style="font-size:12px;color:var(--text2);margin-bottom:14px">Review each site below. Uncheck any you want to exclude from this download — they will remain in the queue for next time. Sites are grouped by Participant ID; one file is downloaded per group.</p>`;
+
+  Object.entries(byPid).forEach(([pid, sites], groupIdx) => {
+    html += `<div style="margin-bottom:18px;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="padding:8px 12px;background:var(--bg2);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <span style="font-weight:600;font-family:var(--mono);font-size:12px;color:var(--blue)">${esc(pid)}</span>
+          <span style="font-size:11px;color:var(--text2);margin-left:8px">${sites.length} site${sites.length!==1?'s':''}</span>
+        </div>
+        <span style="font-size:10px;color:var(--text2)">1 file per participant</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:var(--bg2)">
+          <th style="padding:5px 8px;text-align:center;width:36px;border-bottom:0.5px solid var(--border)">
+            <input type="checkbox" checked title="Include/exclude all in this group" onchange="toggleGroupAll('${esc(pid)}',this)">
+          </th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Site</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">PDI Site ID</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Programs</th>
+        </tr></thead>
+        <tbody>`;
+    sites.forEach(s => {
+      html += `<tr style="border-bottom:0.5px solid var(--border)">
+        <td style="padding:6px 8px;text-align:center">
+          <input type="checkbox" class="ia-site-check" data-pid="${esc(pid)}" data-site-id="${s.id}" checked onchange="refreshImportPreview()">
+        </td>
+        <td style="padding:6px 8px">
+          <div style="font-weight:600">${esc(s.name)}</div>
+          <div style="font-size:10px;color:var(--text2)">${s.rcn} · ${s.city}, ${s.state}</div>
+        </td>
+        <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--blue)">${esc(s._approvedPdi.pdiId)}</td>
+        <td style="padding:6px 8px;font-size:10px">${esc(s.program)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>
+      <div id="ia-preview-${groupIdx}" style="border-top:0.5px solid var(--border)"></div>
+    </div>`;
+  });
+
+  document.getElementById('import-approval-body').innerHTML = html;
+  document.getElementById('import-approval-body').dataset.byPid =
+    JSON.stringify(Object.fromEntries(Object.entries(byPid).map(([pid,sites])=>[pid,sites.map(s=>s.id)])));
+  refreshImportPreview();
+}
+
+function toggleGroupAll(pid, masterCb) {
+  document.querySelectorAll(`.ia-site-check[data-pid="${pid}"]`).forEach(cb => { cb.checked = masterCb.checked; });
+  refreshImportPreview();
+}
+
+function refreshImportPreview() {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+  const bodyEl = document.getElementById('import-approval-body');
+  if (!bodyEl || !bodyEl.dataset.byPid) return;
+  const byPidData = JSON.parse(bodyEl.dataset.byPid);
+  let anyChecked = false;
+
+  Object.entries(byPidData).forEach(([pid, siteIds], groupIdx) => {
+    const includedIds = siteIds.filter(id => {
+      const cb = document.querySelector(`.ia-site-check[data-site-id="${id}"]`);
+      return cb && cb.checked;
+    });
+    const sites = includedIds.map(id => SITES.find(s=>s.id===id)).filter(Boolean);
+    const previewEl = document.getElementById(`ia-preview-${groupIdx}`);
+    if (!previewEl) return;
+
+    if (!sites.length) {
+      previewEl.innerHTML = `<div style="padding:8px 12px;font-size:11px;color:var(--text2);font-style:italic">No sites selected — this group will be skipped.</div>`;
+      return;
+    }
+    anyChecked = true;
+    const fname = `SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${pid.replace(/[^a-zA-Z0-9]/g,'')}_${String(sites.length).padStart(3,'0')}`;
+    const raw = buildImportContent(pid, sites);
+    previewEl.innerHTML = `<div style="padding:8px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--text2)">${fname}.txt</span>
+        <button class="btn sm" onclick="copyText(${JSON.stringify(raw)},this)">Copy</button>
+      </div>
+      <div class="import-code" style="max-height:130px;overflow-y:auto;border:0.5px solid var(--border);border-radius:4px">${esc(raw)}</div>
+    </div>`;
+  });
+
+  document.getElementById('import-download-btn').disabled = !anyChecked;
+}
+
+function buildImportContent(pid, sites) {
+  let raw = `RecordType=FH|${pid}|${sites.length}|\n`;
+  sites.forEach(s => {
+    const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>s.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
+    raw += `RecordType=SH|${s._approvedPdi.pdiId}|${s.name}|ISSRED|ACT|000-000-0000||||\n`;
+    raw += `RecordType=SA|${s.addr}||${s.city}|${s.state}|${s.zip}|||P|${s.lat||''}|${s.lng||''}|\n`;
+    raw += `RecordType=SM|${pid}|${s._approvedPdi.pdiId}|ADD|N|\n`;
+    raw += `RecordType=SG|ADD|${tags}|\n`;
+    raw += `RecordType=ST|\n`;
+  });
+  raw += `RecordType=FT|`;
+  return raw;
+}
+
+function downloadImportFiles() {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+  const bodyEl = document.getElementById('import-approval-body');
+  if (!bodyEl || !bodyEl.dataset.byPid) return;
+  const byPidData = JSON.parse(bodyEl.dataset.byPid);
+  let fileCount = 0;
+  const downloadedSiteIds = [];
+
+  Object.entries(byPidData).forEach(([pid, siteIds]) => {
+    const includedIds = siteIds.filter(id => {
+      const cb = document.querySelector(`.ia-site-check[data-site-id="${id}"]`);
+      return cb && cb.checked;
+    });
+    const sites = includedIds.map(id => SITES.find(s=>s.id===id)).filter(Boolean);
+    if (!sites.length) return;
+    const fname = `SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${pid.replace(/[^a-zA-Z0-9]/g,'')}_${String(sites.length).padStart(3,'0')}.txt`;
+    downloadText(buildImportContent(pid, sites), fname);
+    fileCount++;
+    sites.forEach(s => downloadedSiteIds.push(s.id));
+  });
+
+  if (!fileCount) { alert('No sites are checked. Select at least one site to download.'); return; }
+
+  downloadedSiteIds.forEach(id => resolved.add(id));
+  const el = document.getElementById('sv-imports');
+  el.textContent = parseInt(el.textContent || 0) + fileCount;
+  updateStats(); renderQueue();
+  if (selected && downloadedSiteIds.includes(selected)) {
+    const site = SITES.find(s=>s.id===selected);
+    if (site) buildShell(site);
+  }
+  closeImportApproval();
+  alert(`✓ ${fileCount} file${fileCount!==1?'s':''} downloaded to your local machine.\n${downloadedSiteIds.length} site${downloadedSiteIds.length!==1?'s':''} marked as complete.`);
+}
+
+function downloadText(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+// ---- Utilities ----
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function copyText(txt,btn) { navigator.clipboard.writeText(txt).then(()=>{btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',1600)}).catch(()=>btn.textContent='Failed'); }
+function copyElem(id,btn) { const el=document.getElementById(id); if(el)copyText(el.innerText,btn); }
+
+// ---- Google Maps init (called by script tag below) ----
+// Uses the new google.maps.places.Place API (PlacesService deprecated for new accounts Mar 2025)
+function initGoogleMaps() {
+  mapsReady = true;
+  document.getElementById('maps-dot').className='status-dot active';
+  document.getElementById('maps-label').textContent='Google Maps connected';
+}
+
+function mapsError() {
+  document.getElementById('maps-dot').className='status-dot';
+  document.getElementById('maps-label').textContent='Maps API key required — see CONFIG block';
+}
+
+// ---- CSV Import ----
+// Expected columns (order flexible, matched by header name, case-insensitive):
+// rcn, name, addr (or address), city, state, zip, lat, lng, program,
+// retailerName, retailerEmail, amName, amEmail, falloutReason, status,
+// candidatePdiId, candidateName, candidateAddr, candidateCity, candidateZip,
+// candidateDist, candidateNameScore, candidateAddrScore
+//
+// For multiple candidates per site, repeat the site row with different candidate columns.
+// The tool groups rows by RCN and merges candidates automatically.
+function importCSV(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const lines  = e.target.result.split(/\r?\n/).filter(l=>l.trim());
+      const headers = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/[^a-z]/g,''));
+      const col = (row, ...names) => {
+        for (const n of names) {
+          const i = headers.indexOf(n);
+          if (i>=0 && row[i] !== undefined) return row[i].trim();
+        }
+        return '';
+      };
+
+      const siteMap = {};
+      let nextId = Math.max(0, ...SITES.map(s=>s.id)) + 1;
+
+      for (let i=1; i<lines.length; i++) {
+        // Handle quoted CSV fields
+        const row = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g)
+                    ?.map(v=>v.replace(/^"|"$/g,'').trim()) || lines[i].split(',').map(v=>v.trim());
+        const rcn = col(row,'rcn');
+        if (!rcn) continue;
+
+        if (!siteMap[rcn]) {
+          siteMap[rcn] = {
+            id:            nextId++,
+            rcn:           rcn,
+            name:          col(row,'name','storename','sitename'),
+            addr:          col(row,'addr','address','addressline1'),
+            city:          col(row,'city'),
+            state:         col(row,'state'),
+            zip:           col(row,'zip','zipcode','postalcode'),
+            lat:           parseFloat(col(row,'lat','latitude')) || null,
+            lng:           parseFloat(col(row,'lng','lon','longitude')) || null,
+            program:       col(row,'program','programs'),
+            retailerName:  col(row,'retailername','retailer'),
+            retailerEmail: col(row,'retaileremail'),
+            amName:        col(row,'amname','accountmanager','am'),
+            amEmail:       col(row,'amemail','accountmanageremail'),
+            falloutReason: col(row,'falloutreason','reason','fallout'),
+            status:        col(row,'status') || 'potential',
+            candidates:    []
+          };
+        }
+
+        // Add candidate if columns present
+        const candId = col(row,'candidatepdiid','pdiid','candidateid');
+        if (candId) {
+          siteMap[rcn].candidates.push({
+            pdiId:     candId,
+            name:      col(row,'candidatename','candidatesitename'),
+            addr:      col(row,'candidateaddr','candidateaddress'),
+            city:      col(row,'candidatecity'),
+            zip:       col(row,'candidatezip'),
+            dist:      parseFloat(col(row,'candidatedist','distance','dist')) || 999,
+            nameScore: parseFloat(col(row,'candidatenamescore','namescore')) || 0,
+            addrScore: parseFloat(col(row,'candidateaddrscore','addrscore')) || 0,
+          });
+        }
+      }
+
+      const imported = Object.values(siteMap);
+      if (!imported.length) { alert('No valid rows found. Check that your CSV has a header row with an "rcn" column.'); return; }
+
+      // Merge with existing — update if RCN exists, add if new
+      imported.forEach(imp => {
+        const existing = SITES.findIndex(s=>s.rcn===imp.rcn);
+        if (existing>=0) SITES[existing] = {...SITES[existing], ...imp};
+        else SITES.push(imp);
+      });
+
+      selected = null;
+      updateStats();
+      renderQueue();
+      document.getElementById('detail').innerHTML = document.getElementById('empty-state')?.outerHTML ||
+        '<div class="empty-state"><div class="empty-icon">⊙</div><div style="font-size:14px;font-weight:600">Select a site to review</div></div>';
+      alert('✓ Imported ' + imported.length + ' site' + (imported.length!==1?'s':'') + ' from ' + file.name + '.\n\nExisting sites with matching RCNs were updated. New RCNs were added to the queue.');
+    } catch(err) {
+      alert('Import failed: ' + err.message + '\n\nCheck that the file is a valid CSV with a header row.');
+    }
+    input.value = ''; // reset so same file can be re-imported
+  };
+  reader.readAsText(file);
+}
+
+// ---- Boot ----
+initData();
+</script>
+
+<!-- Load Google Maps JS API with the key from CONFIG -->
+<!-- Uses loading=async (recommended) and the new places library -->
+<script>
+(function(){
+  const key = CONFIG.GOOGLE_MAPS_API_KEY;
+  if (!key || key === 'YOUR_API_KEY_HERE') { mapsError(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&loading=async&callback=initGoogleMaps&onerror=mapsError';
+  s.async = true; s.defer = true;
+  document.head.appendChild(s);
+})();
+</script>
+
+</body>
+</html>
