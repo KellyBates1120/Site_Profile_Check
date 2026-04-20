@@ -137,6 +137,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .badge.potential { background: var(--amber-bg); color: var(--amber); }
 .badge.no-match  { background: var(--red-bg);   color: var(--red); }
 .badge.resolved  { background: var(--green-bg);  color: var(--green); }
+.badge.matched   { background: var(--blue-bg);   color: var(--blue); }
 .rcn { font-size: 10px; color: var(--text3); font-family: var(--mono); }
 
 /* ---- Detail Panel ---- */
@@ -283,10 +284,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <div class="status-dot checking" id="maps-dot"></div>
       <span id="maps-label">Connecting to Google Maps…</span>
     </div>
-    <button class="btn sm warning" id="batch-btn" style="display:none" onclick="openBatch()">⊞ Batch import (<span id="batch-count-lbl">0</span>)</button>
     <button class="btn sm" onclick="document.getElementById('csv-file-input').click()" title="Import site list from CSV">⊕ Import CSV</button>
     <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="importCSV(this)">
-    <button class="btn sm primary" onclick="selectAllPotential()">Select all potential</button>
+    <button class="btn sm primary" id="import-approval-btn" style="display:none" onclick="openImportApproval()">⬇ Import Approval (<span id="import-queue-count">0</span>)</button>
   </div>
 </div>
 
@@ -294,8 +294,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 <div class="stats-bar">
   <div class="stat"><div class="stat-val warn" id="sv-queue">—</div><div class="stat-label">In queue</div></div>
   <div class="stat"><div class="stat-val ok"   id="sv-resolved">0</div><div class="stat-label">Resolved</div></div>
-  <div class="stat"><div class="stat-val info"  id="sv-selected">0</div><div class="stat-label">Selected</div></div>
-  <div class="stat"><div class="stat-val muted" id="sv-imports">0</div><div class="stat-label">Imports sent</div></div>
+  <div class="stat"><div class="stat-val info"  id="sv-matched">0</div><div class="stat-label">Matched</div></div>
+  <div class="stat"><div class="stat-val muted" id="sv-imports">0</div><div class="stat-label">Downloaded</div></div>
   <div class="stat"><div class="stat-val muted" id="sv-flags">0</div><div class="stat-label">Maps conflicts</div></div>
 </div>
 
@@ -317,13 +317,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
         <button class="chip active" onclick="setFilter('all',this)">All</button>
         <button class="chip" onclick="setFilter('potential',this)">Potential</button>
         <button class="chip" onclick="setFilter('no-match',this)">No match</button>
-      </div>
-    </div>
-    <div class="batch-bar" id="batch-bar">
-      <span class="batch-bar-label" id="batch-bar-label">0 selected</span>
-      <div style="display:flex;gap:4px">
-        <button class="btn sm success" onclick="openBatch()">Generate batch file</button>
-        <button class="btn sm" onclick="clearSelection()">Clear</button>
       </div>
     </div>
     <div id="queue-list"></div>
@@ -363,22 +356,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closePidModal()">Cancel</button>
-      <button class="btn success" id="pid-confirm-btn" onclick="confirmMatch()">✓ Confirm &amp; generate import file</button>
+      <button class="btn success" id="pid-confirm-btn" onclick="confirmMatch()">✓ Confirm &amp; add to import queue</button>
     </div>
   </div>
 </div>
 
-<!-- ================================================ BATCH MODAL ================================================ -->
-<div class="overlay" id="batch-overlay">
-  <div class="modal">
+<!-- ================================================ IMPORT APPROVAL MODAL ================================================ -->
+<div class="overlay" id="import-approval-overlay">
+  <div class="modal" style="width:min(96vw,720px)">
     <div class="modal-head">
-      <div class="modal-title">Batch Site Import</div>
-      <button class="btn sm" onclick="closeBatch()">✕</button>
+      <div class="modal-title">Import Approval</div>
+      <button class="btn sm" onclick="closeImportApproval()">✕</button>
     </div>
-    <div class="modal-body" id="batch-body"></div>
+    <div class="modal-body" id="import-approval-body"></div>
     <div class="modal-foot">
-      <button class="btn" onclick="closeBatch()">Cancel</button>
-      <button class="btn success" id="batch-exec-btn" onclick="executeBatch()" disabled>▼ Queue all for SFTP drop</button>
+      <button class="btn" onclick="closeImportApproval()">Close</button>
+      <button class="btn success" id="import-download-btn" onclick="downloadImportFiles()" disabled>⬇ Download import files</button>
     </div>
   </div>
 </div>
@@ -386,7 +379,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 <!-- ================================================ GOOGLE MAPS ================================================ -->
 <script>
 // ---- State ----
-let SITES = [], selected = null, filter = 'all', resolved = new Set(), checked = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false;
+let SITES = [], selected = null, filter = 'all', resolved = new Set(), importQueue = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false;
 
 // ---- Persistent Maps Cache (localStorage) ----
 // Results survive page refresh and new sessions — one API call per site ever,
@@ -463,44 +456,32 @@ function initData() {
 function updateStats() {
   document.getElementById('sv-queue').textContent    = SITES.filter(s=>!resolved.has(s.id)).length;
   document.getElementById('sv-resolved').textContent = resolved.size;
-  document.getElementById('sv-selected').textContent = checked.size;
-  document.getElementById('sv-imports').textContent  = parseInt(document.getElementById('sv-imports').textContent)||0;
+  const pendingImport = [...importQueue].filter(id=>!resolved.has(id)).length;
+  document.getElementById('sv-matched').textContent  = pendingImport;
   document.getElementById('sv-flags').textContent    = Object.values(mapsCache).filter(m=>m.conflict).length;
+  const btn = document.getElementById('import-approval-btn');
+  const countEl = document.getElementById('import-queue-count');
+  if (btn) btn.style.display = pendingImport > 0 ? '' : 'none';
+  if (countEl) countEl.textContent = pendingImport;
 }
 
 // ---- Queue ----
 function setFilter(val, el) { filter=val; document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); renderQueue(); }
-function selectAllPotential() { SITES.filter(s=>s.status==='potential'&&!resolved.has(s.id)).forEach(s=>checked.add(s.id)); updateBatchUI(); renderQueue(); }
-function clearSelection() { checked.clear(); updateBatchUI(); renderQueue(); }
-
-function updateBatchUI() {
-  const n = checked.size;
-  document.getElementById('sv-selected').textContent = n;
-  document.getElementById('batch-bar-label').textContent = `${n} site${n!==1?'s':''} selected`;
-  document.getElementById('batch-bar').classList.toggle('show', n>0);
-  const bb = document.getElementById('batch-btn');
-  bb.style.display = n>0 ? '' : 'none';
-  document.getElementById('batch-count-lbl').textContent = n;
-}
-
-function toggleCheck(id, e) {
-  e.stopPropagation();
-  if (checked.has(id)) checked.delete(id); else checked.add(id);
-  updateBatchUI(); renderQueue();
-}
 
 function renderQueue() {
   const list = document.getElementById('queue-list');
   const items = SITES.filter(s => filter==='all' || s.status===filter);
   list.innerHTML = items.map(s => {
-    const isRes  = resolved.has(s.id);
-    const isChk  = checked.has(s.id);
-    const mc     = mapsCache[s.id];
+    const isRes   = resolved.has(s.id);
+    const isMatch = importQueue.has(s.id) && !isRes;
+    const mc      = mapsCache[s.id];
     const hasConflict = mc && mc.conflict;
-    const bc = isRes?'resolved':s.status==='potential'?'potential':'no-match';
-    const bt = isRes?'Resolved':s.status==='potential'?'Potential':'No match';
+    let bc, bt;
+    if (isRes)               { bc='resolved';  bt='Resolved'; }
+    else if (isMatch)        { bc='matched';   bt='Matched'; }
+    else if (s.status==='potential') { bc='potential'; bt='Potential'; }
+    else                     { bc='no-match';  bt='No match'; }
     return `<div class="site-row${selected===s.id?' active':''}" onclick="selectSite(${s.id})">
-      <input type="checkbox" class="site-check" ${isChk?'checked':''} ${isRes?'disabled':''} onclick="toggleCheck(${s.id},event)">
       <div class="site-body">
         <div class="site-name">${esc(s.name)}${hasConflict?'<span class="conflict-flag">⚠ Maps</span>':''}</div>
         <div class="site-addr">${esc(s.addr)}, ${s.city} ${s.state}</div>
@@ -521,17 +502,23 @@ async function selectSite(id) {
 }
 
 function buildShell(site) {
-  const tab = activeTab[site.id] || 'match';
-  const isRes = resolved.has(site.id);
+  const validTabs = ['match', 'maps', 'comms', 'emails'];
+  const tab = validTabs.includes(activeTab[site.id]) ? activeTab[site.id] : 'match';
+  const isRes    = resolved.has(site.id);
+  const isQueued = importQueue.has(site.id) && !isRes;
+  const banner = isRes
+    ? `<div class="resolved-banner">✓ Import file downloaded — site complete.</div>`
+    : isQueued
+    ? `<div class="resolved-banner" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue-bd)">✓ Match confirmed — queued for import approval. <button class="btn sm" style="margin-left:8px" onclick="openImportApproval()">Review import →</button></div>`
+    : '';
   document.getElementById('detail').innerHTML = `
-    ${isRes?`<div class="resolved-banner">✓ Resolved — Site Import queued for SFTP. Retailer and AM notified.</div>`:''}
+    ${banner}
     <div class="detail-header">
       <div>
         <div class="detail-title">${esc(site.name)}${mapsCache[site.id]&&mapsCache[site.id].conflict?' <span style="font-size:12px;color:var(--red);font-weight:400">⚠ Maps conflict</span>':''}</div>
         <div class="detail-sub">${site.rcn} · ${site.program} · ${site.city}, ${site.state} · ${esc(site.retailerName)}</div>
       </div>
       <div class="action-group">
-        <input type="checkbox" title="Add to batch" style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer" ${checked.has(site.id)?'checked':''} onchange="toggleCheck(${site.id},{stopPropagation:()=>{}})">
         <button class="btn sm" onclick="doEscalate(${site.id})">Escalate</button>
         <button class="btn sm" onclick="doSkip()">Skip</button>
       </div>
@@ -539,13 +526,11 @@ function buildShell(site) {
     <div class="tab-bar">
       <div class="tab${tab==='match'?' active':''}" onclick="switchTab(${site.id},'match',this)">AI Analysis</div>
       <div class="tab${tab==='maps'?' active':''}" onclick="switchTab(${site.id},'maps',this)">⬡ Maps Verify${mapsCache[site.id]&&mapsCache[site.id].conflict?' ⚠':''}</div>
-      <div class="tab${tab==='import'?' active':''}" onclick="switchTab(${site.id},'import',this)">Import File</div>
       <div class="tab${tab==='comms'?' active':''}" onclick="switchTab(${site.id},'comms',this)">Comms</div>
       <div class="tab${tab==='emails'?' active':''}" onclick="switchTab(${site.id},'emails',this)">Email Mapping</div>
     </div>
     <div class="pane${tab==='match'?' active':''}"  id="pane-match"></div>
     <div class="pane${tab==='maps'?' active':''}"   id="pane-maps"></div>
-    <div class="pane${tab==='import'?' active':''}" id="pane-import"></div>
     <div class="pane${tab==='comms'?' active':''}"  id="pane-comms"></div>
     <div class="pane${tab==='emails'?' active':''}" id="pane-emails"></div>`;
 }
@@ -557,7 +542,6 @@ function switchTab(siteId, tab, el) {
   el.classList.add('active');
   document.getElementById('pane-'+tab).classList.add('active');
   const site = SITES.find(s=>s.id===siteId);
-  if (tab==='import') renderImportPane(site);
   if (tab==='comms')  renderCommsPane(site);
   if (tab==='maps')   renderMapsPane(site);
   if (tab==='emails') renderEmailsPane();
@@ -736,9 +720,74 @@ function renderMapsPane(site) {
     </div>`;
   }
 
+  if (mapsReady && mc) {
+    html += `<div id="site-map-${site.id}" style="height:240px;border-radius:var(--radius);border:0.5px solid var(--border);margin-top:12px;overflow:hidden;background:var(--bg2)"></div>
+    <div style="margin-top:6px;font-size:10px;color:var(--text2);display:flex;gap:12px">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E85D24;vertical-align:middle;margin-right:3px"></span>Altria coordinates</span>
+      ${mc.found ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${mc.conflict?'#8b2020':'#1a6b3c'};vertical-align:middle;margin-right:3px"></span>Google Maps found</span>` : ''}
+    </div>`;
+  }
+
   html += `<div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.6"><strong>How this works:</strong> The matching engine calls <code style="font-family:var(--mono);font-size:10px;background:var(--bg2);padding:1px 4px;border-radius:3px">places.findPlaceFromQuery()</code> with the Altria store name and address. The returned coordinates become a third geo-match signal. If the returned business name differs significantly from the Altria name, the site is flagged as a conflict.</div>
   </div>`;
   pane.innerHTML = html;
+  if (mapsReady && mc) initSiteMap(site);
+}
+
+function initSiteMap(site) {
+  const mapEl = document.getElementById(`site-map-${site.id}`);
+  if (!mapEl) return;
+  const mc = mapsCache[site.id];
+
+  // Prefer Google Maps found coords for centering, fall back to Altria coords
+  const centerLat = (mc && mc.found && mc.lat) ? mc.lat : site.lat;
+  const centerLng = (mc && mc.found && mc.lng) ? mc.lng : site.lng;
+  if (!centerLat || !centerLng) {
+    mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--text2)">No coordinates available for this site.</div>';
+    return;
+  }
+
+  const map = new google.maps.Map(mapEl, {
+    center: { lat: centerLat, lng: centerLng },
+    zoom: 16,
+    mapId: 'DEMO_MAP_ID',
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+  });
+
+  // Orange pin — Altria reported coordinates
+  if (site.lat && site.lng) {
+    const altriaPin = new google.maps.marker.PinElement({
+      background: '#E85D24', borderColor: '#b03a10', glyphColor: '#fff', glyph: 'A'
+    });
+    new google.maps.marker.AdvancedMarkerElement({
+      map, position: { lat: site.lat, lng: site.lng },
+      content: altriaPin.element, title: `Altria: ${site.name}`
+    });
+  }
+
+  // Green (confirmed) or red (conflict) pin — Google Maps found location
+  if (mc && mc.found && mc.lat && mc.lng) {
+    const gmPin = new google.maps.marker.PinElement({
+      background: mc.conflict ? '#8b2020' : '#1a6b3c',
+      borderColor: mc.conflict ? '#5a1010' : '#0d3d1f',
+      glyphColor: '#fff', glyph: 'G'
+    });
+    new google.maps.marker.AdvancedMarkerElement({
+      map, position: { lat: mc.lat, lng: mc.lng },
+      content: gmPin.element, title: `Google Maps: ${mc.name}`
+    });
+  }
+
+  // If both pins exist and are different, fit bounds to show both
+  if (site.lat && site.lng && mc && mc.found && mc.lat && mc.lng &&
+      (Math.abs(site.lat - mc.lat) > 0.0001 || Math.abs(site.lng - mc.lng) > 0.0001)) {
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend({ lat: site.lat, lng: site.lng });
+    bounds.extend({ lat: mc.lat, lng: mc.lng });
+    map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+  }
 }
 
 // ---- Google Maps lookup (new Places API — required for accounts created after Mar 2025) ----
@@ -792,120 +841,6 @@ function namesMatch(a, b) {
   return score >= 0.45; // 45% word overlap = same business
 }
 
-// ---- Import File ----
-function renderImportPane(site) {
-  const pane = document.getElementById('pane-import'); if(!pane) return;
-  const pdi = site._approvedPdi;
-  if (!pdi) {
-    pane.innerHTML=`<div style="padding:24px;text-align:center;color:var(--text2);font-size:12px"><div style="font-size:22px;margin-bottom:8px">⊙</div><div style="font-weight:600;margin-bottom:4px">No match approved yet</div>Approve a candidate on the AI Analysis tab to auto-generate the Site Import file.<br><span style="font-size:11px;margin-top:4px;display:block">You will be prompted to enter the retailer's Participant ID before the file is generated.</span></div>`;
-    return;
-  }
-
-  const participantId = site._participantId || '';
-  const today=new Date();
-  const ds=`${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
-  const fname=`SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${site.rcn.replace(/-/g,'')}_001`;
-  const tags=['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
-
-  // FH and SM both use the retailer's participant ID
-  // Tech Ops submits on behalf of the retailer — FH identifies who the file is for
-  const buildRaw = (pid) =>
-    `RecordType=FH|${pid}|1|\n` +
-    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
-    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
-    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
-    `RecordType=SG|ADD|${tags}|\n` +
-    `RecordType=ST|\n` +
-    `RecordType=FT|`;
-
-  const raw = buildRaw(participantId || 'PARTICIPANT-ID-REQUIRED');
-  const missingId = !participantId;
-
-  pane.innerHTML=`<div class="import-section">
-
-    <!-- Participant ID row -->
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);border:0.5px solid ${missingId?'var(--red-bd)':'var(--green-bd)'};background:${missingId?'var(--red-bg)':'var(--green-bg)'};margin-bottom:12px">
-      <div style="flex:1">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${missingId?'var(--red)':'var(--green)'};margin-bottom:4px">Retailer Participant ID <span style="font-size:9px">(FH + SM records)</span></div>
-        <input id="import-pid-${site.id}" type="text" value="${esc(participantId)}" placeholder="Enter Participant ID…"
-          style="width:100%;padding:5px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-family:var(--mono)"
-          oninput="updateImportPid(${site.id}, this.value)">
-        <div style="font-size:10px;color:${missingId?'var(--red)':'var(--text2)'};margin-top:3px">${missingId?'⚠ Required — used in FH (submitting on behalf of this retailer) and SM (site mapping) records.':'Used in the FH record (submitting on this retailer\'s behalf) and SM record (site mapping). One file per Participant ID.'}</div>
-        <div id="pid-conflict-${site.id}" style="display:none;font-size:10px;color:var(--red);margin-top:4px;line-height:1.5;padding:5px 7px;background:var(--red-bg);border-radius:4px;border:0.5px solid var(--red-bd)"></div>
-      </div>
-    </div>
-
-    <!-- File header row -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <span style="font-size:12px;font-weight:600">${fname}</span>
-      <div style="display:flex;gap:5px">
-        <button class="btn sm" id="copy-import-${site.id}" onclick="copyImportFile(${site.id})" ${missingId?'disabled':''}>Copy</button>
-        <button class="btn sm success" onclick="sftp(${site.id},'${fname}')" ${missingId?'disabled':''}>▼ Queue SFTP drop</button>
-      </div>
-    </div>
-
-    <div class="import-card">
-      <div class="import-head"><span style="font-size:10px;font-family:var(--mono)">${fname}</span></div>
-      <div class="import-code" id="import-code-${site.id}">${esc(raw)}</div>
-    </div>
-    <div class="import-note" style="margin-top:8px">
-      <strong>FH</strong> (retailer: <span id="import-pid-label-${site.id}" style="font-family:var(--mono)">${participantId||'—'}</span>) ·
-      <strong>SH</strong> (PDI site: ${pdi.pdiId}) ·
-      <strong>SA</strong> (address + lat/lng) ·
-      <strong>SM</strong> (retailer: <span style="font-family:var(--mono)">${participantId||'—'}</span> → ${pdi.pdiId}) ·
-      <strong>SG</strong> (${tags}) ·
-      <strong>ST/FT</strong>. PDI Loyalty Host processes SFTP drops within 5 minutes.
-    </div>
-  </div>`;
-}
-
-function updateImportPid(siteId, value) {
-  const site = SITES.find(s=>s.id===siteId);
-  const trimmed = value.trim();
-
-  // Validate before saving — PDI site ID must not be assigned to a different participant elsewhere
-  const conflictMsg = trimmed && site._approvedPdi
-    ? checkParticipantConflict(siteId, site._approvedPdi.pdiId, trimmed)
-    : null;
-
-  // Show or clear the conflict warning beneath the input
-  let warnEl = document.getElementById(`pid-conflict-${siteId}`);
-  if (warnEl) {
-    warnEl.textContent = conflictMsg || '';
-    warnEl.style.display = conflictMsg ? 'block' : 'none';
-  }
-
-  // Block save if there's a conflict
-  const copyBtn = document.getElementById(`copy-import-${siteId}`);
-  const sftpBtn = copyBtn?.nextElementSibling;
-  const blocked = !trimmed || !!conflictMsg;
-  if (copyBtn) copyBtn.disabled = blocked;
-  if (sftpBtn) sftpBtn.disabled = blocked;
-
-  if (conflictMsg) return; // Don't update the site or regenerate the file
-
-  site._participantId = trimmed;
-  const pdi  = site._approvedPdi;
-  const pid  = trimmed || 'PARTICIPANT-ID-REQUIRED';
-  const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
-  const raw =
-    `RecordType=FH|${pid}|1|\n` +
-    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
-    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
-    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
-    `RecordType=SG|ADD|${tags}|\n` +
-    `RecordType=ST|\n` +
-    `RecordType=FT|`;
-  const codeEl = document.getElementById(`import-code-${siteId}`);
-  if (codeEl) codeEl.textContent = raw;
-  const lblEl  = document.getElementById(`import-pid-label-${siteId}`);
-  if (lblEl) lblEl.textContent = trimmed || '—';
-}
-
-function copyImportFile(siteId) {
-  const codeEl = document.getElementById(`import-code-${siteId}`);
-  if (codeEl) copyText(codeEl.textContent, document.getElementById(`copy-import-${siteId}`));
-}
 
 // ---- Comms ----
 function renderCommsPane(site) {
@@ -1090,13 +1025,10 @@ function confirmMatch() {
   const site = SITES.find(s=>s.id===siteId);
   site._approvedPdi   = { pdiId, name: pdiName };
   site._participantId = participantId;
-  resolved.add(siteId);
+  importQueue.add(siteId);
   closePidModal();
   updateStats(); renderQueue(); buildShell(site);
-  activeTab[siteId]='import';
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===2));
-  document.querySelectorAll('.pane').forEach((p,i)=>p.classList.toggle('active',i===2));
-  renderImportPane(site);
+  renderMatchPane(site);
 }
 
 // A PDI Site ID can only belong to one Participant ID.
@@ -1126,165 +1058,179 @@ function approveAnyway(siteId) {
 function sendAMAlert(id) { activeTab[id]='comms'; const s=SITES.find(x=>x.id===id); buildShell(s); document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===3)); document.querySelectorAll('.pane').forEach((p,i)=>p.classList.toggle('active',i===3)); renderCommsPane(s); }
 function doEscalate(id) { const s=SITES.find(x=>x.id===id); alert(`Site ${s.rcn} escalated to senior Tech Ops.\nExcluded from automated processing until manually resolved.`); }
 function doSkip() { selected=null; document.getElementById('detail').innerHTML=document.getElementById('empty-state').outerHTML; renderQueue(); }
-function sftp(id, fname) { alert(`"${fname}" queued for SFTP drop to ${CONFIG.SFTP_PATH}.\n\nPDI Loyalty Host will scan and process within 5 minutes.\nCheck the exception file log for any record-level errors.`); const el=document.getElementById('sv-imports'); el.textContent=parseInt(el.textContent)+1; }
 
-// ---- Batch ----
-function openBatch() {
-  if (!checked.size) { alert('Select sites using the checkboxes first, then click Generate batch file.'); return; }
-  const sites  = SITES.filter(s=>checked.has(s.id));
-  const ready  = sites.filter(s=>s._approvedPdi);
-  const skip   = sites.filter(s=>!s._approvedPdi);
-  const missingPid = ready.filter(s=>!s._participantId);
-
-  let html = `<p style="font-size:12px;color:var(--text2);margin-bottom:14px">Enter the Participant ID for each approved site below. Sites are grouped by Participant ID — a separate Site Import file is generated for each retailer, since the FH record identifies who the file is submitted on behalf of.</p>`;
-
-  if (ready.length) {
-    html += `<div style="font-size:11px;font-weight:600;color:var(--green);margin-bottom:8px">✓ Approved matches (${ready.length})</div>`;
-    html += `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px">
-      <thead><tr style="background:var(--bg2)">
-        <th style="padding:6px 8px;text-align:left;font-weight:600;border-bottom:0.5px solid var(--border)">Site</th>
-        <th style="padding:6px 8px;text-align:left;font-weight:600;border-bottom:0.5px solid var(--border)">PDI Site ID</th>
-        <th style="padding:6px 8px;text-align:left;font-weight:600;border-bottom:0.5px solid var(--border);color:var(--red)">Participant ID (SM) <span style="color:var(--red)">*</span></th>
-      </tr></thead>
-      <tbody>`;
-    ready.forEach(s => {
-      const missing = !s._participantId;
-      html += `<tr style="border-bottom:0.5px solid var(--border)">
-        <td style="padding:7px 8px;vertical-align:top">
-          <div style="font-weight:600">${esc(s.name)}</div>
-          <div style="color:var(--text2);font-size:10px">${s.rcn} · ${s.city}, ${s.state}</div>
-        </td>
-        <td style="padding:7px 8px;vertical-align:top;font-family:var(--mono);font-size:10px;color:var(--blue)">${esc(s._approvedPdi.pdiId)}</td>
-        <td style="padding:7px 8px;vertical-align:top">
-          <input type="text" data-site-id="${s.id}" value="${esc(s._participantId||'')}"
-            placeholder="Enter Participant ID…"
-            style="width:100%;padding:4px 6px;border-radius:4px;border:0.5px solid ${missing?'var(--red-bd)':'var(--border2)'};background:var(--bg);color:var(--text);font-size:11px;font-family:var(--mono)"
-            oninput="batchPidChange(${s.id},this.value)">
-          ${missing?`<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ Required</div>`:''}
-          <div id="batch-pid-warn-${s.id}" style="display:none;font-size:10px;color:var(--red);margin-top:3px;line-height:1.5"></div>
-        </td>
-      </tr>`;
-    });
-    html += `</tbody></table>`;
-
-    if (missingPid.length) {
-      html += `<div style="padding:8px 10px;border-radius:5px;background:var(--amber-bg);border:0.5px solid var(--amber-bd);font-size:11px;color:var(--amber);margin-bottom:12px">⚠ ${missingPid.length} site${missingPid.length!==1?'s':''} missing a Participant ID. Enter them above before generating — the Queue SFTP button will be disabled until all are filled.</div>`;
-    }
+// ---- Import Approval ----
+function openImportApproval() {
+  const pending = SITES.filter(s => importQueue.has(s.id) && !resolved.has(s.id));
+  if (!pending.length) {
+    alert('No sites are queued for import yet. Approve a match on the AI Analysis tab to add sites to the import queue.');
+    return;
   }
-
-  if (skip.length) {
-    html += `<div style="font-size:11px;font-weight:600;color:var(--amber);margin:4px 0 6px">⚠ No match approved yet — skipped (${skip.length})</div>`;
-    skip.forEach(s => { html+=`<div class="batch-site-row" style="opacity:.55"><div><div class="bsr-name">${esc(s.name)}</div><div class="bsr-meta">${s.rcn} · ${s.city}, ${s.state}</div></div><span class="badge potential" style="margin-left:auto">Skipped</span></div>`; });
-  }
-
-  html += `<div id="batch-file-preview"></div>`;
-  document.getElementById('batch-body').innerHTML = html;
-  document.getElementById('batch-body').dataset.ready = JSON.stringify(ready.map(s=>s.id));
-  refreshBatchPreview();
-  document.getElementById('batch-overlay').classList.add('show');
+  renderImportApprovalBody(pending);
+  document.getElementById('import-approval-overlay').classList.add('show');
 }
 
-function batchPidChange(siteId, value) {
-  const site    = SITES.find(s=>s.id===siteId);
-  const trimmed = value.trim();
-
-  // Check for participant conflict before saving
-  const conflictMsg = trimmed && site._approvedPdi
-    ? checkParticipantConflict(siteId, site._approvedPdi.pdiId, trimmed)
-    : null;
-
-  // Show inline warning in the batch table row
-  const warnEl = document.getElementById(`batch-pid-warn-${siteId}`);
-  if (warnEl) {
-    warnEl.textContent = conflictMsg || '';
-    warnEl.style.display = conflictMsg ? 'block' : 'none';
-  }
-
-  if (!conflictMsg) {
-    site._participantId = trimmed;
-  }
-
-  refreshBatchPreview();
+function closeImportApproval() {
+  document.getElementById('import-approval-overlay').classList.remove('show');
 }
 
-function refreshBatchPreview() {
-  const ids   = JSON.parse(document.getElementById('batch-body').dataset.ready||'[]');
-  const ready = SITES.filter(s=>ids.includes(s.id));
-  const allHavePid    = ready.every(s=>s._participantId);
-  const hasConflict   = ready.some(s =>
-    s._approvedPdi && checkParticipantConflict(s.id, s._approvedPdi.pdiId, s._participantId)
-  );
-  const execBtn = document.getElementById('batch-exec-btn');
-  if (execBtn) execBtn.disabled = !allHavePid || !ready.length || hasConflict;
+function renderImportApprovalBody(pending) {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
 
-  if (!ready.length) { document.getElementById('batch-file-preview').innerHTML=''; return; }
-
-  // Group by Participant ID — each retailer gets their own file
-  // FH identifies who the file is for; cannot mix participants in one file
-  const byParticipant = {};
-  ready.forEach(s => {
-    const pid = s._participantId || 'MISSING';
-    if (!byParticipant[pid]) byParticipant[pid] = [];
-    byParticipant[pid].push(s);
+  // Group by participant ID
+  const byPid = {};
+  pending.forEach(s => {
+    const pid = s._participantId;
+    if (!byPid[pid]) byPid[pid] = [];
+    byPid[pid].push(s);
   });
 
-  const today=new Date();
-  const ds=`${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
-  const participantCount = Object.keys(byParticipant).length;
+  let html = `<p style="font-size:12px;color:var(--text2);margin-bottom:14px">Review each site below. Uncheck any you want to exclude from this download — they will remain in the queue for next time. Sites are grouped by Participant ID; one file is downloaded per group.</p>`;
 
-  let html = `<div style="margin-top:14px;padding:8px 10px;border-radius:var(--radius);background:var(--blue-bg);border:0.5px solid var(--blue-bd);font-size:11px;color:var(--blue);margin-bottom:10px">
-    Generating <strong>${participantCount} file${participantCount!==1?'s':''}</strong> — one per retailer Participant ID. The FH record identifies who each file is submitted for, so sites from different participants cannot be combined into one file.
-  </div>`;
-
-  Object.entries(byParticipant).forEach(([pid, sites], idx) => {
-    const fname = `SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${pid.replace(/[^a-zA-Z0-9]/g,'')}_${String(sites.length).padStart(3,'0')}`;
-    let raw = `RecordType=FH|${pid}|${sites.length}|\n`;
-    sites.forEach(s => {
-      const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>s.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
-      raw += `RecordType=SH|${s._approvedPdi.pdiId}|${s.name}|ISSRED|ACT|000-000-0000||||\n`;
-      raw += `RecordType=SA|${s.addr}||${s.city}|${s.state}|${s.zip}|||P|${s.lat||''}|${s.lng||''}|\n`;
-      raw += `RecordType=SM|${pid}|${s._approvedPdi.pdiId}|ADD|N|\n`;
-      raw += `RecordType=SG|ADD|${tags}|\n`;
-      raw += `RecordType=ST|\n`;
-    });
-    raw += `RecordType=FT|`;
-
-    html += `<div style="margin-bottom:10px">
-      <div style="font-size:11px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px">
-        <span style="font-family:var(--mono);color:var(--blue)">${pid}</span>
-        <span style="color:var(--text2);font-weight:400">· ${sites.length} site${sites.length!==1?'s':''}</span>
-      </div>
-      <div class="import-card">
-        <div class="import-head">
-          <span style="font-size:10px;font-family:var(--mono)">${fname}</span>
-          <button class="btn sm" onclick="copyText(${JSON.stringify(raw)},this)">Copy</button>
+  Object.entries(byPid).forEach(([pid, sites], groupIdx) => {
+    html += `<div style="margin-bottom:18px;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="padding:8px 12px;background:var(--bg2);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <span style="font-weight:600;font-family:var(--mono);font-size:12px;color:var(--blue)">${esc(pid)}</span>
+          <span style="font-size:11px;color:var(--text2);margin-left:8px">${sites.length} site${sites.length!==1?'s':''}</span>
         </div>
-        <div class="import-code" style="max-height:140px;overflow-y:auto">${esc(raw)}</div>
+        <span style="font-size:10px;color:var(--text2)">1 file per participant</span>
       </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:var(--bg2)">
+          <th style="padding:5px 8px;text-align:center;width:36px;border-bottom:0.5px solid var(--border)">
+            <input type="checkbox" checked title="Include/exclude all in this group" onchange="toggleGroupAll('${esc(pid)}',this)">
+          </th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Site</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">PDI Site ID</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Programs</th>
+        </tr></thead>
+        <tbody>`;
+    sites.forEach(s => {
+      html += `<tr style="border-bottom:0.5px solid var(--border)">
+        <td style="padding:6px 8px;text-align:center">
+          <input type="checkbox" class="ia-site-check" data-pid="${esc(pid)}" data-site-id="${s.id}" checked onchange="refreshImportPreview()">
+        </td>
+        <td style="padding:6px 8px">
+          <div style="font-weight:600">${esc(s.name)}</div>
+          <div style="font-size:10px;color:var(--text2)">${s.rcn} · ${s.city}, ${s.state}</div>
+        </td>
+        <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;color:var(--blue)">${esc(s._approvedPdi.pdiId)}</td>
+        <td style="padding:6px 8px;font-size:10px">${esc(s.program)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>
+      <div id="ia-preview-${groupIdx}" style="border-top:0.5px solid var(--border)"></div>
     </div>`;
   });
 
-  if (!allHavePid) {
-    html += `<div style="padding:8px 10px;border-radius:5px;background:var(--amber-bg);border:0.5px solid var(--amber-bd);font-size:11px;color:var(--amber);margin-top:6px">⚠ Fill in all Participant IDs above to enable the Queue SFTP button.</div>`;
-  }
-
-  document.getElementById('batch-file-preview').innerHTML = html;
+  document.getElementById('import-approval-body').innerHTML = html;
+  document.getElementById('import-approval-body').dataset.byPid =
+    JSON.stringify(Object.fromEntries(Object.entries(byPid).map(([pid,sites])=>[pid,sites.map(s=>s.id)])));
+  refreshImportPreview();
 }
 
-function closeBatch() { document.getElementById('batch-overlay').classList.remove('show'); }
+function toggleGroupAll(pid, masterCb) {
+  document.querySelectorAll(`.ia-site-check[data-pid="${pid}"]`).forEach(cb => { cb.checked = masterCb.checked; });
+  refreshImportPreview();
+}
 
-function executeBatch() {
-  const byParticipant = {};
-  sites.forEach(s => {
-    if (!byParticipant[s._participantId]) byParticipant[s._participantId] = [];
-    byParticipant[s._participantId].push(s);
+function refreshImportPreview() {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+  const bodyEl = document.getElementById('import-approval-body');
+  if (!bodyEl || !bodyEl.dataset.byPid) return;
+  const byPidData = JSON.parse(bodyEl.dataset.byPid);
+  let anyChecked = false;
+
+  Object.entries(byPidData).forEach(([pid, siteIds], groupIdx) => {
+    const includedIds = siteIds.filter(id => {
+      const cb = document.querySelector(`.ia-site-check[data-site-id="${id}"]`);
+      return cb && cb.checked;
+    });
+    const sites = includedIds.map(id => SITES.find(s=>s.id===id)).filter(Boolean);
+    const previewEl = document.getElementById(`ia-preview-${groupIdx}`);
+    if (!previewEl) return;
+
+    if (!sites.length) {
+      previewEl.innerHTML = `<div style="padding:8px 12px;font-size:11px;color:var(--text2);font-style:italic">No sites selected — this group will be skipped.</div>`;
+      return;
+    }
+    anyChecked = true;
+    const fname = `SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${pid.replace(/[^a-zA-Z0-9]/g,'')}_${String(sites.length).padStart(3,'0')}`;
+    const raw = buildImportContent(pid, sites);
+    previewEl.innerHTML = `<div style="padding:8px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--text2)">${fname}.txt</span>
+        <button class="btn sm" onclick="copyText(${JSON.stringify(raw)},this)">Copy</button>
+      </div>
+      <div class="import-code" style="max-height:130px;overflow-y:auto;border:0.5px solid var(--border);border-radius:4px">${esc(raw)}</div>
+    </div>`;
   });
-  const fileCount = Object.keys(byParticipant).length;
-  sites.forEach(s=>{ resolved.add(s.id); });
-  checked.clear();
-  const el=document.getElementById('sv-imports'); el.textContent=parseInt(el.textContent)+fileCount;
-  updateStats(); updateBatchUI(); renderQueue(); closeBatch();
-  alert(`${fileCount} Site Import file${fileCount!==1?'s':''} queued for SFTP drop to ${CONFIG.SFTP_PATH}.\n${sites.length} site${sites.length!==1?'s':''} total across ${fileCount} retailer participant${fileCount!==1?'s':''}.\nPDI Loyalty Host will process each file within 5 minutes.`);
+
+  document.getElementById('import-download-btn').disabled = !anyChecked;
+}
+
+function buildImportContent(pid, sites) {
+  let raw = `RecordType=FH|${pid}|${sites.length}|\n`;
+  sites.forEach(s => {
+    const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>s.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
+    raw += `RecordType=SH|${s._approvedPdi.pdiId}|${s.name}|ISSRED|ACT|000-000-0000||||\n`;
+    raw += `RecordType=SA|${s.addr}||${s.city}|${s.state}|${s.zip}|||P|${s.lat||''}|${s.lng||''}|\n`;
+    raw += `RecordType=SM|${pid}|${s._approvedPdi.pdiId}|ADD|N|\n`;
+    raw += `RecordType=SG|ADD|${tags}|\n`;
+    raw += `RecordType=ST|\n`;
+  });
+  raw += `RecordType=FT|`;
+  return raw;
+}
+
+function downloadImportFiles() {
+  const today = new Date();
+  const ds = `${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
+  const bodyEl = document.getElementById('import-approval-body');
+  if (!bodyEl || !bodyEl.dataset.byPid) return;
+  const byPidData = JSON.parse(bodyEl.dataset.byPid);
+  let fileCount = 0;
+  const downloadedSiteIds = [];
+
+  Object.entries(byPidData).forEach(([pid, siteIds]) => {
+    const includedIds = siteIds.filter(id => {
+      const cb = document.querySelector(`.ia-site-check[data-site-id="${id}"]`);
+      return cb && cb.checked;
+    });
+    const sites = includedIds.map(id => SITES.find(s=>s.id===id)).filter(Boolean);
+    if (!sites.length) return;
+    const fname = `SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${pid.replace(/[^a-zA-Z0-9]/g,'')}_${String(sites.length).padStart(3,'0')}.txt`;
+    downloadText(buildImportContent(pid, sites), fname);
+    fileCount++;
+    sites.forEach(s => downloadedSiteIds.push(s.id));
+  });
+
+  if (!fileCount) { alert('No sites are checked. Select at least one site to download.'); return; }
+
+  downloadedSiteIds.forEach(id => resolved.add(id));
+  const el = document.getElementById('sv-imports');
+  el.textContent = parseInt(el.textContent || 0) + fileCount;
+  updateStats(); renderQueue();
+  if (selected && downloadedSiteIds.includes(selected)) {
+    const site = SITES.find(s=>s.id===selected);
+    if (site) buildShell(site);
+  }
+  closeImportApproval();
+  alert(`✓ ${fileCount} file${fileCount!==1?'s':''} downloaded to your local machine.\n${downloadedSiteIds.length} site${downloadedSiteIds.length!==1?'s':''} marked as complete.`);
+}
+
+function downloadText(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 // ---- Utilities ----
@@ -1412,7 +1358,7 @@ initData();
   const key = CONFIG.GOOGLE_MAPS_API_KEY;
   if (!key || key === 'YOUR_API_KEY_HERE') { mapsError(); return; }
   const s = document.createElement('script');
-  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&loading=async&callback=initGoogleMaps&onerror=mapsError';
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places,maps,marker&loading=async&callback=initGoogleMaps&onerror=mapsError';
   s.async = true; s.defer = true;
   document.head.appendChild(s);
 })();
