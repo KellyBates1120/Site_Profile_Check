@@ -720,9 +720,74 @@ function renderMapsPane(site) {
     </div>`;
   }
 
+  if (mapsReady && mc) {
+    html += `<div id="site-map-${site.id}" style="height:240px;border-radius:var(--radius);border:0.5px solid var(--border);margin-top:12px;overflow:hidden;background:var(--bg2)"></div>
+    <div style="margin-top:6px;font-size:10px;color:var(--text2);display:flex;gap:12px">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E85D24;vertical-align:middle;margin-right:3px"></span>Altria coordinates</span>
+      ${mc.found ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${mc.conflict?'#8b2020':'#1a6b3c'};vertical-align:middle;margin-right:3px"></span>Google Maps found</span>` : ''}
+    </div>`;
+  }
+
   html += `<div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.6"><strong>How this works:</strong> The matching engine calls <code style="font-family:var(--mono);font-size:10px;background:var(--bg2);padding:1px 4px;border-radius:3px">places.findPlaceFromQuery()</code> with the Altria store name and address. The returned coordinates become a third geo-match signal. If the returned business name differs significantly from the Altria name, the site is flagged as a conflict.</div>
   </div>`;
   pane.innerHTML = html;
+  if (mapsReady && mc) initSiteMap(site);
+}
+
+function initSiteMap(site) {
+  const mapEl = document.getElementById(`site-map-${site.id}`);
+  if (!mapEl) return;
+  const mc = mapsCache[site.id];
+
+  // Prefer Google Maps found coords for centering, fall back to Altria coords
+  const centerLat = (mc && mc.found && mc.lat) ? mc.lat : site.lat;
+  const centerLng = (mc && mc.found && mc.lng) ? mc.lng : site.lng;
+  if (!centerLat || !centerLng) {
+    mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--text2)">No coordinates available for this site.</div>';
+    return;
+  }
+
+  const map = new google.maps.Map(mapEl, {
+    center: { lat: centerLat, lng: centerLng },
+    zoom: 16,
+    mapId: 'DEMO_MAP_ID',
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+  });
+
+  // Orange pin — Altria reported coordinates
+  if (site.lat && site.lng) {
+    const altriaPin = new google.maps.marker.PinElement({
+      background: '#E85D24', borderColor: '#b03a10', glyphColor: '#fff', glyph: 'A'
+    });
+    new google.maps.marker.AdvancedMarkerElement({
+      map, position: { lat: site.lat, lng: site.lng },
+      content: altriaPin.element, title: `Altria: ${site.name}`
+    });
+  }
+
+  // Green (confirmed) or red (conflict) pin — Google Maps found location
+  if (mc && mc.found && mc.lat && mc.lng) {
+    const gmPin = new google.maps.marker.PinElement({
+      background: mc.conflict ? '#8b2020' : '#1a6b3c',
+      borderColor: mc.conflict ? '#5a1010' : '#0d3d1f',
+      glyphColor: '#fff', glyph: 'G'
+    });
+    new google.maps.marker.AdvancedMarkerElement({
+      map, position: { lat: mc.lat, lng: mc.lng },
+      content: gmPin.element, title: `Google Maps: ${mc.name}`
+    });
+  }
+
+  // If both pins exist and are different, fit bounds to show both
+  if (site.lat && site.lng && mc && mc.found && mc.lat && mc.lng &&
+      (Math.abs(site.lat - mc.lat) > 0.0001 || Math.abs(site.lng - mc.lng) > 0.0001)) {
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend({ lat: site.lat, lng: site.lng });
+    bounds.extend({ lat: mc.lat, lng: mc.lng });
+    map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+  }
 }
 
 // ---- Google Maps lookup (new Places API — required for accounts created after Mar 2025) ----
@@ -1293,7 +1358,7 @@ initData();
   const key = CONFIG.GOOGLE_MAPS_API_KEY;
   if (!key || key === 'YOUR_API_KEY_HERE') { mapsError(); return; }
   const s = document.createElement('script');
-  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places&loading=async&callback=initGoogleMaps&onerror=mapsError';
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=places,maps,marker&loading=async&callback=initGoogleMaps&onerror=mapsError';
   s.async = true; s.defer = true;
   document.head.appendChild(s);
 })();
