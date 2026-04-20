@@ -502,7 +502,8 @@ async function selectSite(id) {
 }
 
 function buildShell(site) {
-  const tab = activeTab[site.id] || 'match';
+  const validTabs = ['match', 'maps', 'comms', 'emails'];
+  const tab = validTabs.includes(activeTab[site.id]) ? activeTab[site.id] : 'match';
   const isRes    = resolved.has(site.id);
   const isQueued = importQueue.has(site.id) && !isRes;
   const banner = isRes
@@ -525,13 +526,11 @@ function buildShell(site) {
     <div class="tab-bar">
       <div class="tab${tab==='match'?' active':''}" onclick="switchTab(${site.id},'match',this)">AI Analysis</div>
       <div class="tab${tab==='maps'?' active':''}" onclick="switchTab(${site.id},'maps',this)">⬡ Maps Verify${mapsCache[site.id]&&mapsCache[site.id].conflict?' ⚠':''}</div>
-      <div class="tab${tab==='import'?' active':''}" onclick="switchTab(${site.id},'import',this)">Import File</div>
       <div class="tab${tab==='comms'?' active':''}" onclick="switchTab(${site.id},'comms',this)">Comms</div>
       <div class="tab${tab==='emails'?' active':''}" onclick="switchTab(${site.id},'emails',this)">Email Mapping</div>
     </div>
     <div class="pane${tab==='match'?' active':''}"  id="pane-match"></div>
     <div class="pane${tab==='maps'?' active':''}"   id="pane-maps"></div>
-    <div class="pane${tab==='import'?' active':''}" id="pane-import"></div>
     <div class="pane${tab==='comms'?' active':''}"  id="pane-comms"></div>
     <div class="pane${tab==='emails'?' active':''}" id="pane-emails"></div>`;
 }
@@ -543,7 +542,6 @@ function switchTab(siteId, tab, el) {
   el.classList.add('active');
   document.getElementById('pane-'+tab).classList.add('active');
   const site = SITES.find(s=>s.id===siteId);
-  if (tab==='import') renderImportPane(site);
   if (tab==='comms')  renderCommsPane(site);
   if (tab==='maps')   renderMapsPane(site);
   if (tab==='emails') renderEmailsPane();
@@ -778,120 +776,6 @@ function namesMatch(a, b) {
   return score >= 0.45; // 45% word overlap = same business
 }
 
-// ---- Import File ----
-function renderImportPane(site) {
-  const pane = document.getElementById('pane-import'); if(!pane) return;
-  const pdi = site._approvedPdi;
-  if (!pdi) {
-    pane.innerHTML=`<div style="padding:24px;text-align:center;color:var(--text2);font-size:12px"><div style="font-size:22px;margin-bottom:8px">⊙</div><div style="font-weight:600;margin-bottom:4px">No match approved yet</div>Approve a candidate on the AI Analysis tab to auto-generate the Site Import file.<br><span style="font-size:11px;margin-top:4px;display:block">You will be prompted to enter the retailer's Participant ID before the file is generated.</span></div>`;
-    return;
-  }
-
-  const participantId = site._participantId || '';
-  const today=new Date();
-  const ds=`${today.getFullYear()}_${String(today.getMonth()+1).padStart(2,'0')}_${String(today.getDate()).padStart(2,'0')}`;
-  const fname=`SiteImport_${ds}_${CONFIG.RUN_ID.replace(/-/g,'')}_${site.rcn.replace(/-/g,'')}_001`;
-  const tags=['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
-
-  // FH and SM both use the retailer's participant ID
-  // Tech Ops submits on behalf of the retailer — FH identifies who the file is for
-  const buildRaw = (pid) =>
-    `RecordType=FH|${pid}|1|\n` +
-    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
-    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
-    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
-    `RecordType=SG|ADD|${tags}|\n` +
-    `RecordType=ST|\n` +
-    `RecordType=FT|`;
-
-  const raw = buildRaw(participantId || 'PARTICIPANT-ID-REQUIRED');
-  const missingId = !participantId;
-
-  pane.innerHTML=`<div class="import-section">
-
-    <!-- Participant ID row -->
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);border:0.5px solid ${missingId?'var(--red-bd)':'var(--green-bd)'};background:${missingId?'var(--red-bg)':'var(--green-bg)'};margin-bottom:12px">
-      <div style="flex:1">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${missingId?'var(--red)':'var(--green)'};margin-bottom:4px">Retailer Participant ID <span style="font-size:9px">(FH + SM records)</span></div>
-        <input id="import-pid-${site.id}" type="text" value="${esc(participantId)}" placeholder="Enter Participant ID…"
-          style="width:100%;padding:5px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-family:var(--mono)"
-          oninput="updateImportPid(${site.id}, this.value)">
-        <div style="font-size:10px;color:${missingId?'var(--red)':'var(--text2)'};margin-top:3px">${missingId?'⚠ Required — used in FH (submitting on behalf of this retailer) and SM (site mapping) records.':'Used in the FH record (submitting on this retailer\'s behalf) and SM record (site mapping). One file per Participant ID.'}</div>
-        <div id="pid-conflict-${site.id}" style="display:none;font-size:10px;color:var(--red);margin-top:4px;line-height:1.5;padding:5px 7px;background:var(--red-bg);border-radius:4px;border:0.5px solid var(--red-bd)"></div>
-      </div>
-    </div>
-
-    <!-- File header row -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <span style="font-size:12px;font-weight:600">${fname}</span>
-      <div style="display:flex;gap:5px">
-        <button class="btn sm" id="copy-import-${site.id}" onclick="copyImportFile(${site.id})" ${missingId?'disabled':''}>Copy</button>
-        <button class="btn sm primary" onclick="openImportApproval()">Review in Import Approval →</button>
-      </div>
-    </div>
-
-    <div class="import-card">
-      <div class="import-head"><span style="font-size:10px;font-family:var(--mono)">${fname}</span></div>
-      <div class="import-code" id="import-code-${site.id}">${esc(raw)}</div>
-    </div>
-    <div class="import-note" style="margin-top:8px">
-      <strong>FH</strong> (retailer: <span id="import-pid-label-${site.id}" style="font-family:var(--mono)">${participantId||'—'}</span>) ·
-      <strong>SH</strong> (PDI site: ${pdi.pdiId}) ·
-      <strong>SA</strong> (address + lat/lng) ·
-      <strong>SM</strong> (retailer: <span style="font-family:var(--mono)">${participantId||'—'}</span> → ${pdi.pdiId}) ·
-      <strong>SG</strong> (${tags}) ·
-      <strong>ST/FT</strong>. Use Import Approval to download and submit this file.
-    </div>
-  </div>`;
-}
-
-function updateImportPid(siteId, value) {
-  const site = SITES.find(s=>s.id===siteId);
-  const trimmed = value.trim();
-
-  // Validate before saving — PDI site ID must not be assigned to a different participant elsewhere
-  const conflictMsg = trimmed && site._approvedPdi
-    ? checkParticipantConflict(siteId, site._approvedPdi.pdiId, trimmed)
-    : null;
-
-  // Show or clear the conflict warning beneath the input
-  let warnEl = document.getElementById(`pid-conflict-${siteId}`);
-  if (warnEl) {
-    warnEl.textContent = conflictMsg || '';
-    warnEl.style.display = conflictMsg ? 'block' : 'none';
-  }
-
-  // Block save if there's a conflict
-  const copyBtn = document.getElementById(`copy-import-${siteId}`);
-  const sftpBtn = copyBtn?.nextElementSibling;
-  const blocked = !trimmed || !!conflictMsg;
-  if (copyBtn) copyBtn.disabled = blocked;
-  if (sftpBtn) sftpBtn.disabled = blocked;
-
-  if (conflictMsg) return; // Don't update the site or regenerate the file
-
-  site._participantId = trimmed;
-  const pdi  = site._approvedPdi;
-  const pid  = trimmed || 'PARTICIPANT-ID-REQUIRED';
-  const tags = ['ALTRIA_LFA','ALTRIA_PPLUS'].filter(t=>site.program.includes(t==='ALTRIA_LFA'?'LFA':'P+')).join(',');
-  const raw =
-    `RecordType=FH|${pid}|1|\n` +
-    `RecordType=SH|${pdi.pdiId}|${site.name}|ISSRED|ACT|000-000-0000||||\n` +
-    `RecordType=SA|${site.addr}||${site.city}|${site.state}|${site.zip}|||P|${site.lat||''}|${site.lng||''}|\n` +
-    `RecordType=SM|${pid}|${pdi.pdiId}|ADD|N|\n` +
-    `RecordType=SG|ADD|${tags}|\n` +
-    `RecordType=ST|\n` +
-    `RecordType=FT|`;
-  const codeEl = document.getElementById(`import-code-${siteId}`);
-  if (codeEl) codeEl.textContent = raw;
-  const lblEl  = document.getElementById(`import-pid-label-${siteId}`);
-  if (lblEl) lblEl.textContent = trimmed || '—';
-}
-
-function copyImportFile(siteId) {
-  const codeEl = document.getElementById(`import-code-${siteId}`);
-  if (codeEl) copyText(codeEl.textContent, document.getElementById(`copy-import-${siteId}`));
-}
 
 // ---- Comms ----
 function renderCommsPane(site) {
