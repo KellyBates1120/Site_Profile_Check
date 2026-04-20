@@ -676,7 +676,20 @@ function renderMapsPane(site) {
         ${mc_cached ? `<button class="btn sm" onclick="refreshMapsLookup(${site.id})" style="font-size:10px;padding:2px 7px">↻ Refresh</button>` : ''}
       </span>
     </div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6">Results are cached locally in your browser — Google Places is only called once per site. Click Refresh to force a new lookup for this site.</p>`;
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.6">Results are cached locally in your browser — Google Places is only called once per site. Click Refresh to force a new lookup for this site.</p>
+
+    <div style="margin-bottom:14px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--radius);background:var(--bg2)">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);margin-bottom:6px">Address being mapped</div>
+      <div style="display:flex;gap:6px">
+        <input id="maps-search-${site.id}" type="text"
+          value="${esc(site._mapSearchQuery || (site.name + ' ' + site.addr + ', ' + site.city + ', ' + site.state + ' ' + site.zip))}"
+          style="flex:1;padding:6px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-family:inherit"
+          placeholder="Name + address + city + state…"
+          onkeydown="if(event.key==='Enter')searchCustomAddr(${site.id})">
+        <button class="btn sm primary" onclick="searchCustomAddr(${site.id})">↺ Re-search</button>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:5px">If the map doesn't look right, correct the address above and click Re-search to re-run the lookup.</div>
+    </div>`;
 
   if (!mapsReady) {
     html += `<div style="padding:14px;text-align:center;font-size:12px;color:var(--text2);border:0.5px solid var(--border);border-radius:var(--radius)">Google Maps API not connected. Add your API key to the CONFIG section at the top of the HTML file.</div>`;
@@ -790,6 +803,17 @@ function initSiteMap(site) {
   }
 }
 
+function searchCustomAddr(siteId) {
+  const site = SITES.find(s=>s.id===siteId);
+  const input = document.getElementById(`maps-search-${siteId}`);
+  if (!input || !input.value.trim()) return;
+  site._mapSearchQuery = input.value.trim();
+  clearSiteCache(siteId);
+  const pane = document.getElementById('pane-maps');
+  if (pane) pane.innerHTML = '<div class="maps-loading"><span class="maps-spinner"></span>Searching…</div>';
+  lookupMaps(site).then(() => { renderMapsPane(site); renderMatchPane(site); buildShell(site); updateStats(); });
+}
+
 // ---- Google Maps lookup (new Places API — required for accounts created after Mar 2025) ----
 // Manually force a fresh Maps lookup for a site, clearing the cache first
 async function refreshMapsLookup(siteId) {
@@ -807,7 +831,7 @@ async function refreshMapsLookup(siteId) {
 async function lookupMaps(site) {
   if (!mapsReady) return;
   try {
-    const query = site.name + ' ' + site.addr + ' ' + site.city + ' ' + site.state;
+    const query = site._mapSearchQuery || (site.name + ' ' + site.addr + ' ' + site.city + ' ' + site.state);
     const { places } = await google.maps.places.Place.searchByText({
       textQuery:      query,
       fields:         ['displayName', 'location', 'formattedAddress', 'nationalPhoneNumber'],
