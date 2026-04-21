@@ -433,8 +433,8 @@ loadEmailMapping(); // load on page load
 // ---- Sample Data (replace with your actual fallout feed) ----
 function initData() {
   SITES = [
-    { id:1, rcn:'RCN-TX-48291', name:'Circle K #4421', addr:'1842 Precinct Line Rd', city:'Hurst', state:'TX', zip:'76054', lat:32.8231, lng:-97.1738, program:'LFA + P+', retailerName:'Circle K Stores Inc.', amName:'Sarah Mitchell', falloutReason:'Geo distance 210m — above 200m auto-match threshold',status:'potential',
-      candidates:[{pdiId:'PDI-44821',name:'Circle K #4421',addr:'1844 Precinct Line Rd',city:'Hurst',state:'TX',zip:'76054',dist:212,nameScore:.99,addrScore:.96},{pdiId:'PDI-44900',name:'Circle K (Hurst)',addr:'1842 Pipeline Rd',city:'Hurst',state:'TX',zip:'76054',dist:480,nameScore:.72,addrScore:.61}]},
+    { id:1, rcn:'RCN-TX-48291', name:'Circle K #4421', addr:'1842 Precinct Line Rd', city:'Hurst', state:'TX', zip:'76054', lat:32.8231, lng:-97.1738, program:'LFA + P+', retailerName:'Circle K Stores Inc.', amName:'Sarah Mitchell', falloutReason:'Geo distance 210m — above 200m auto-match threshold', phone:'817-555-0142', status:'potential',
+      candidates:[{pdiId:'PDI-44821',name:'Circle K #4421',addr:'1844 Precinct Line Rd',city:'Hurst',state:'TX',zip:'76054',dist:212,nameScore:.99,addrScore:.96,phone:'817-555-0142'},{pdiId:'PDI-44900',name:'Circle K (Hurst)',addr:'1842 Pipeline Rd',city:'Hurst',state:'TX',zip:'76054',dist:480,nameScore:.72,addrScore:.61,phone:'817-555-9900'}]},
     { id:2, rcn:'RCN-TX-38811', name:'7-Eleven #32944', addr:'604 W Airport Fwy', city:'Irving', state:'TX', zip:'75062', lat:32.8142, lng:-97.0148, program:'LFA', retailerName:'7-Eleven Inc.', amName:'James Okafor', falloutReason:'RCN not in Loyalty Host — no prior mapping exists', status:'no-match', candidates:[]},
     { id:3, rcn:'RCN-TX-22719', name:'Valero Corner Store', addr:'3200 Western Center Blvd', city:'Fort Worth', state:'TX', zip:'76137', lat:32.8971, lng:-97.3021, program:'P+', retailerName:'Valero Energy Corp.', amName:'Sarah Mitchell', falloutReason:'Two PDI candidates within 180m — ambiguous, manual selection required', status:'potential',
       candidates:[{pdiId:'PDI-31100',name:'Valero Corner Store',addr:'3200 Western Center Blvd',city:'Fort Worth',state:'TX',zip:'76137',dist:45,nameScore:1.0,addrScore:1.0},{pdiId:'PDI-31101',name:'Valero (Western Ctr)',addr:'3198 Western Center Blvd',city:'Fort Worth',state:'TX',zip:'76137',dist:172,nameScore:.88,addrScore:.98}]},
@@ -608,6 +608,54 @@ function renderMatchPane(site) {
   pane.innerHTML = html;
 }
 
+// ---- Matching helpers ----
+const STREET_TYPES = {
+  'ave':'avenue','blvd':'boulevard','st':'street','dr':'drive','rd':'road',
+  'ln':'lane','ct':'court','pkwy':'parkway','hwy':'highway','fwy':'freeway',
+  'pl':'place','cir':'circle','trl':'trail','ter':'terrace','sq':'square'
+};
+const BRAND_ALIASES = {
+  'ck':'circle k','7-11':'7 eleven','7-eleven':'7 eleven','bp':'bp',
+  'eg':'eg america','egamerica':'eg america','musa':'murphy usa',
+  'racetrack':'racetrac'
+};
+
+function normalizeName(name) {
+  let s = String(name).toLowerCase()
+    .replace(/#\s*\d+/g,'')           // remove #1234
+    .replace(/\bno\.?\s*\d+/g,'')     // remove No. 1234
+    .replace(/\bstore\s*\d+/g,'')     // remove Store 1234
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ').trim();
+  // expand known aliases
+  for (const [alias, full] of Object.entries(BRAND_ALIASES)) {
+    s = s.replace(new RegExp(`\\b${alias}\\b`, 'g'), full);
+  }
+  return s;
+}
+
+function wordOverlapScore(a, b) {
+  const tok = s => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean));
+  const ta = tok(a), tb = tok(b);
+  if (!ta.size || !tb.size) return 0;
+  let overlap = 0;
+  ta.forEach(w => { if (tb.has(w)) overlap++; });
+  return overlap / Math.max(ta.size, tb.size);
+}
+
+function normalizeStreetType(addr) {
+  return String(addr).toLowerCase()
+    .replace(/\b([a-z]+)\b/g, w => STREET_TYPES[w] || w);
+}
+
+function zipMatch(z1, z2) {
+  return String(z1).slice(0,5) === String(z2).slice(0,5) ? 'exact' : 'none';
+}
+
+function normalizePhone(p) {
+  return String(p||'').replace(/\D/g,'').slice(-10);
+}
+
 // ---- Rule-based scorer ----
 function scoreCandidate(site, c, mc) {
   let score = 0; const signals = []; let reasoning = '';
@@ -639,6 +687,43 @@ function scoreCandidate(site, c, mc) {
 
   score = Math.min(Math.max(Math.round(score),1),98);
 
+  // ZIP match signal (+5 pts)
+  if (site.zip && c.zip) {
+    if (zipMatch(site.zip, c.zip) === 'exact') {
+      score += 5;
+      signals.push({l:`ZIP: ${site.zip} ✓`, t:'good'});
+    } else {
+      signals.push({l:`ZIP: ${site.zip}→${c.zip}`, t:'warn'});
+    }
+  }
+
+  // Brand-normalized name signal (informational — shows when store# / abbreviation noise suppresses raw score)
+  const normSiteN = normalizeName(site.name), normCandN = normalizeName(c.name);
+  const normNameScore = wordOverlapScore(normSiteN, normCandN);
+  if (normNameScore - namePct/100 >= 0.10) {
+    signals.push({l:`Brand match: ${Math.round(normNameScore*100)}% ↑`, t:'good'});
+  }
+
+  // Street type normalization signal (informational — flags when only abbreviation differs)
+  const normSiteA = normalizeStreetType(site.addr), normCandA = normalizeStreetType(c.addr);
+  const normAddrScore = wordOverlapScore(normSiteA, normCandA);
+  if (normAddrScore - addrPct/100 >= 0.10) {
+    signals.push({l:'Addr: abbr. only ↑', t:'warn'});
+  }
+
+  // Phone signal (+15 pts when both sides have a phone number)
+  if (site.phone && c.phone) {
+    const sp = normalizePhone(site.phone), cp = normalizePhone(c.phone);
+    if (sp && cp && sp === cp) {
+      score = Math.min(score + 15, 98);
+      signals.push({l:'Phone: match ✓', t:'good'});
+    } else if (sp && cp) {
+      signals.push({l:'Phone: no match', t:'warn'});
+    }
+  }
+
+  score = Math.min(Math.max(Math.round(score),1),98);
+
   // Build reasoning
   const parts = [];
   if (c.dist<=75) parts.push(`Geo distance of ${c.dist}m is within the 75m auto-match threshold.`);
@@ -646,6 +731,8 @@ function scoreCandidate(site, c, mc) {
   if (namePct>=95) parts.push(`Store name is an exact match.`);
   else if (namePct>=80) parts.push(`Store name similarity of ${namePct}% is strong despite minor variation.`);
   else parts.push(`Store name similarity of ${namePct}% is below the reliable match threshold.`);
+  if (normNameScore - namePct/100 >= 0.10) parts.push(`After removing store number and normalizing brand name, similarity improves to ${Math.round(normNameScore*100)}%.`);
+  if (normAddrScore - addrPct/100 >= 0.10) parts.push(`Address difference appears to be a street type abbreviation only — the locations are likely the same.`);
   if (mc && mc.conflict) parts.push(`Google Maps found a different business at this address — manual verification is recommended before approving.`);
   else if (mc && mc.found) parts.push(`Google Maps independently confirms this business at the location.`);
   reasoning = parts.join(' ');
@@ -1395,6 +1482,7 @@ function importCSV(input) {
             amEmail:       col(row,'amemail','accountmanageremail'),
             falloutReason: col(row,'falloutreason','reason','fallout'),
             status:        col(row,'status') || 'potential',
+            phone:         col(row,'phone','sitephone','altriaphone'),
             candidates:    []
           };
         }
@@ -1411,6 +1499,7 @@ function importCSV(input) {
             dist:      parseFloat(col(row,'candidatedist','distance','dist')) || 999,
             nameScore: parseFloat(col(row,'candidatenamescore','namescore')) || 0,
             addrScore: parseFloat(col(row,'candidateaddrscore','addrscore')) || 0,
+            phone:     col(row,'candidatephone','phone','candidatephonenumber'),
           });
         }
       }
