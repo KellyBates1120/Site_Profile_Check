@@ -576,7 +576,68 @@ function renderMatchPane(site) {
   }
 
   if (site.candidates.length === 0) {
-    html += `<div class="no-cands"><div class="icon">◉</div><div style="font-weight:600;margin-bottom:4px">No PDI candidates found</div><div style="margin-bottom:12px;font-size:11px">No PDI Loyalty Host sites found within the search radius. Recommend sending an AM alert to investigate whether this site needs to be onboarded.</div><div style="display:flex;gap:6px;justify-content:center"><button class="btn primary" onclick="sendAMAlert(${site.id})">Send AM alert</button><button class="btn" onclick="doEscalate(${site.id})">Escalate</button></div></div>`;
+    // ---- Google Maps fallback for no-match sites ----
+    let gmCard = '';
+    if (!mapsReady) {
+      gmCard = `<div style="padding:10px 12px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg2);font-size:11px;color:var(--text2);margin-bottom:10px">Google Maps not connected — add your API key to get ground-truth contact info for this site.</div>`;
+    } else if (!mc) {
+      gmCard = `<div style="padding:10px 12px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--bg2);font-size:11px;color:var(--text2);margin-bottom:10px"><span class="maps-spinner"></span> Looking up site on Google Maps…</div>`;
+    } else if (mc.found && !mc.conflict) {
+      gmCard = `<div style="border:0.5px solid var(--green-bd);border-radius:var(--radius);overflow:hidden;margin-bottom:10px">
+        <div style="padding:7px 11px;background:var(--green-bg);font-size:11px;font-weight:600;color:var(--green);display:flex;align-items:center;gap:6px">
+          <span>✓ Google Maps confirms this business exists</span>
+        </div>
+        <div style="padding:10px 12px;font-size:11px;line-height:1.7">
+          <div style="display:grid;grid-template-columns:80px 1fr;gap:2px 8px">
+            <span style="color:var(--text2)">Found name</span><span style="font-weight:600">${esc(mc.name)}</span>
+            <span style="color:var(--text2)">Address</span><span>${esc(mc.address)}</span>
+            ${mc.phone ? `<span style="color:var(--text2)">Phone</span><span style="font-weight:600;color:var(--blue)">${esc(mc.phone)}</span>` : ''}
+            <span style="color:var(--text2)">Coords</span><span style="font-family:var(--mono);font-size:10px">${mc.lat?.toFixed(5)}, ${mc.lng?.toFixed(5)}</span>
+          </div>
+          <div style="margin-top:8px;padding:6px 9px;border-radius:5px;background:var(--green-bg);border:0.5px solid var(--green-bd);font-size:11px;color:var(--green)">
+            This location appears to be a real, operating business. The site likely needs to be onboarded into PDI Loyalty Host. Use the phone number above to contact the retailer directly, or forward to the AM.
+          </div>
+          ${mc.phone ? `<div style="margin-top:8px;display:flex;gap:6px"><button class="btn sm" onclick="copyText('${esc(mc.phone)}',this)">Copy phone</button><button class="btn sm primary" onclick="sendAMAlert(${site.id})">Send AM alert</button></div>` : `<div style="margin-top:8px;display:flex;gap:6px"><button class="btn sm primary" onclick="sendAMAlert(${site.id})">Send AM alert</button></div>`}
+        </div>
+      </div>`;
+    } else if (mc.found && mc.conflict) {
+      gmCard = `<div style="border:0.5px solid var(--amber-bd);border-radius:var(--radius);overflow:hidden;margin-bottom:10px">
+        <div style="padding:7px 11px;background:var(--amber-bg);font-size:11px;font-weight:600;color:var(--amber)">⚠ Google Maps found a different business at this address</div>
+        <div style="padding:10px 12px;font-size:11px;line-height:1.7">
+          <div style="display:grid;grid-template-columns:80px 1fr;gap:2px 8px">
+            <span style="color:var(--text2)">Altria says</span><span style="font-weight:600">${esc(site.name)}</span>
+            <span style="color:var(--text2)">Google found</span><span style="font-weight:600;color:var(--amber)">${esc(mc.name)}</span>
+            <span style="color:var(--text2)">Address</span><span>${esc(mc.address)}</span>
+            ${mc.phone ? `<span style="color:var(--text2)">Phone</span><span style="font-weight:600;color:var(--blue)">${esc(mc.phone)}</span>` : ''}
+          </div>
+          <div style="margin-top:8px;padding:6px 9px;border-radius:5px;background:var(--amber-bg);border:0.5px solid var(--amber-bd);font-size:11px;color:var(--amber)">
+            The address exists but a different business was found. The Altria site may have closed, relocated, or the address data may be incorrect. Verify before taking action.
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            ${mc.phone ? `<button class="btn sm" onclick="copyText('${esc(mc.phone)}',this)">Copy phone</button>` : ''}
+            <button class="btn sm warning" onclick="doEscalate(${site.id})">Escalate</button>
+            <button class="btn sm primary" onclick="sendAMAlert(${site.id})">Send AM alert</button>
+          </div>
+        </div>
+      </div>`;
+    } else {
+      gmCard = `<div style="border:0.5px solid var(--red-bd);border-radius:var(--radius);overflow:hidden;margin-bottom:10px">
+        <div style="padding:7px 11px;background:var(--red-bg);font-size:11px;font-weight:600;color:var(--red)">✕ Google Maps could not find this business</div>
+        <div style="padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.6">
+          No business matching this name and address was found on Google Maps. This may indicate the site never existed, has permanently closed, or the Altria address data is incorrect.
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <button class="btn sm danger" onclick="doEscalate(${site.id})">Escalate — likely bad data</button>
+            <button class="btn sm primary" onclick="sendAMAlert(${site.id})">Send AM alert</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    html += `<div style="padding:11px 16px">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);margin-bottom:10px">No PDI candidates found — Google Maps ground-truth</div>
+      ${gmCard}
+      <div style="font-size:11px;color:var(--text2);line-height:1.5">No PDI Loyalty Host sites were found within the search radius. See the Maps Verify tab to view the location on the map.</div>
+    </div>`;
   } else {
     const scored = site.candidates.map(c => scoreCandidate(site, c, mc));
     scored.sort((a,b)=>b.score-a.score);
