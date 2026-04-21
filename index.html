@@ -284,6 +284,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <div class="status-dot checking" id="maps-dot"></div>
       <span id="maps-label">Connecting to Google Maps…</span>
     </div>
+    <button class="btn sm" id="history-btn" onclick="openHistory()">⟳ History (0)</button>
     <button class="btn sm" onclick="document.getElementById('csv-file-input').click()" title="Import site list from CSV">⊕ Import CSV</button>
     <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="importCSV(this)">
     <button class="btn sm primary" id="import-approval-btn" style="display:none" onclick="openImportApproval()">⬇ Import Approval (<span id="import-queue-count">0</span>)</button>
@@ -376,10 +377,70 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   </div>
 </div>
 
+<!-- ================================================ HISTORY MODAL ================================================ -->
+<div class="overlay" id="history-overlay">
+  <div class="modal" style="width:min(96vw,820px)">
+    <div class="modal-head">
+      <div class="modal-title">⟳ Determination History</div>
+      <button class="btn sm" onclick="closeHistory()">✕</button>
+    </div>
+    <div class="modal-body" id="history-modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn sm" onclick="exportHistoryCSV()">⬇ Export CSV</button>
+      <button class="btn sm danger" onclick="clearHistory()">Clear history</button>
+      <button class="btn" onclick="closeHistory()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================================================ GOOGLE MAPS ================================================ -->
 <script>
 // ---- State ----
 let SITES = [], selected = null, filter = 'all', resolved = new Set(), importQueue = new Set(), activeTab = {}, mapsCache = {}, mapsReady = false;
+let siteHistory = [], escalations = {}; // cross-run persistent records
+
+// ---- History + Escalations (localStorage) ----
+const HISTORY_KEY    = 'altria_history_v1';
+const ESCALATION_KEY = 'altria_escalations_v1';
+
+function loadHistory() {
+  try { siteHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(e) { siteHistory = []; }
+}
+function saveHistory() {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(siteHistory)); } catch(e) {}
+}
+function loadEscalations() {
+  try { escalations = JSON.parse(localStorage.getItem(ESCALATION_KEY) || '{}'); } catch(e) { escalations = {}; }
+}
+function saveEscalations() {
+  try { localStorage.setItem(ESCALATION_KEY, JSON.stringify(escalations)); } catch(e) {}
+}
+function addToHistory(site, determination, extra) {
+  siteHistory.push({
+    id:            Date.now() + Math.random(),
+    rcn:           site.rcn,
+    runId:         CONFIG.RUN_ID,
+    siteName:      site.name,
+    addr:          site.addr,
+    city:          site.city,
+    state:         site.state,
+    zip:           site.zip,
+    program:       site.program,
+    retailerName:  site.retailerName,
+    falloutReason: site.falloutReason,
+    determination,
+    determinedAt:  new Date().toISOString(),
+    ...extra
+  });
+  saveHistory();
+  updateHistoryBtn();
+}
+function updateHistoryBtn() {
+  const btn = document.getElementById('history-btn');
+  if (btn) btn.textContent = `⟳ History (${siteHistory.length})`;
+}
+loadHistory();
+loadEscalations();
 
 // ---- Persistent Maps Cache (localStorage) ----
 // Results survive page refresh and new sessions — one API call per site ever,
@@ -481,11 +542,18 @@ function renderQueue() {
     else if (isMatch)        { bc='matched';   bt='Matched'; }
     else if (s.status==='potential') { bc='potential'; bt='Potential'; }
     else                     { bc='no-match';  bt='No match'; }
+    const esc_rec = escalations[s.rcn];
+    let ageBadge = '';
+    if (esc_rec) {
+      const days = Math.floor((Date.now() - new Date(esc_rec.at)) / 86400000);
+      const ageCls = days < 2 ? 'good' : days < 5 ? 'warn' : 'bad';
+      ageBadge = `<span class="signal ${ageCls}" style="font-size:9px;padding:1px 5px;margin-left:4px">${days}d escalated</span>`;
+    }
     return `<div class="site-row${selected===s.id?' active':''}" onclick="selectSite(${s.id})">
       <div class="site-body">
         <div class="site-name">${esc(s.name)}${hasConflict?'<span class="conflict-flag">⚠ Maps</span>':''}</div>
         <div class="site-addr">${esc(s.addr)}, ${s.city} ${s.state}</div>
-        <div class="site-meta"><span class="badge ${bc}">${bt}</span><span class="rcn">${s.rcn}</span></div>
+        <div class="site-meta"><span class="badge ${bc}">${bt}</span><span class="rcn">${s.rcn}</span>${ageBadge}</div>
       </div>
     </div>`;
   }).join('');
@@ -520,6 +588,8 @@ function buildShell(site) {
       </div>
       <div class="action-group">
         <button class="btn sm" onclick="doEscalate(${site.id})">Escalate</button>
+        <button class="btn sm danger" onclick="rejectSite(${site.id})">Reject</button>
+        <button class="btn sm warning" onclick="markBadData(${site.id})">Bad data</button>
         <button class="btn sm" onclick="doSkip()">Skip</button>
       </div>
     </div>
@@ -1296,7 +1366,40 @@ function approveAnyway(siteId) {
 }
 
 function sendAMAlert(id) { activeTab[id]='comms'; const s=SITES.find(x=>x.id===id); buildShell(s); document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===3)); document.querySelectorAll('.pane').forEach((p,i)=>p.classList.toggle('active',i===3)); renderCommsPane(s); }
-function doEscalate(id) { const s=SITES.find(x=>x.id===id); alert(`Site ${s.rcn} escalated to senior Tech Ops.\nExcluded from automated processing until manually resolved.`); }
+function doEscalate(id) {
+  const site = SITES.find(x=>x.id===id);
+  if (!site) return;
+  escalations[site.rcn] = { at: new Date().toISOString(), runId: CONFIG.RUN_ID, siteName: site.name };
+  saveEscalations();
+  importQueue.delete(id);
+  addToHistory(site, 'escalated', {});
+  updateStats(); renderQueue();
+  if (selected === id) buildShell(site);
+  alert(`Site ${site.rcn} escalated. It will remain in the queue with an age indicator until manually resolved.`);
+}
+
+function rejectSite(id) {
+  const site = SITES.find(x=>x.id===id);
+  if (!site || !confirm(`Reject ${site.name}?\n\nThis removes it from the active queue and records it in history.`)) return;
+  addToHistory(site, 'rejected', {});
+  SITES = SITES.filter(s=>s.id!==id);
+  importQueue.delete(id);
+  selected = null;
+  document.getElementById('detail').innerHTML = document.getElementById('empty-state').outerHTML;
+  updateStats(); renderQueue();
+}
+
+function markBadData(id) {
+  const site = SITES.find(x=>x.id===id);
+  if (!site || !confirm(`Mark ${site.name} as bad data?\n\nThis removes it from the active queue and records it in history.`)) return;
+  addToHistory(site, 'bad-data', {});
+  SITES = SITES.filter(s=>s.id!==id);
+  importQueue.delete(id);
+  selected = null;
+  document.getElementById('detail').innerHTML = document.getElementById('empty-state').outerHTML;
+  updateStats(); renderQueue();
+}
+
 function doSkip() { selected=null; document.getElementById('detail').innerHTML=document.getElementById('empty-state').outerHTML; renderQueue(); }
 
 // ---- Import Approval ----
@@ -1451,6 +1554,10 @@ function downloadImportFiles() {
   if (!fileCount) { alert('No sites are checked. Select at least one site to download.'); return; }
 
   downloadedSiteIds.forEach(id => resolved.add(id));
+  downloadedSiteIds.forEach(id => {
+    const s = SITES.find(x=>x.id===id);
+    if (s) addToHistory(s, 'matched', { participantId: s._participantId, pdiSiteId: s._approvedPdi?.pdiId });
+  });
   const el = document.getElementById('sv-imports');
   el.textContent = parseInt(el.textContent || 0) + fileCount;
   updateStats(); renderQueue();
@@ -1587,6 +1694,131 @@ function importCSV(input) {
     input.value = ''; // reset so same file can be re-imported
   };
   reader.readAsText(file);
+}
+
+// ---- History Modal ----
+function openHistory() {
+  renderHistoryTable();
+  document.getElementById('history-overlay').classList.add('show');
+}
+function closeHistory() {
+  document.getElementById('history-overlay').classList.remove('show');
+}
+
+function renderHistoryTable(opts) {
+  opts = opts || {};
+  const runId = opts.runId || '';
+  const rcn = opts.rcn || '';
+  const determination = opts.determination || '';
+  const fromDate = opts.fromDate || '';
+  const toDate = opts.toDate || '';
+
+  let rows = siteHistory.slice();
+
+  if (runId)         rows = rows.filter(r => r.runId === runId);
+  if (rcn)           rows = rows.filter(r => r.rcn.toLowerCase().includes(rcn.toLowerCase()) || (r.siteName||'').toLowerCase().includes(rcn.toLowerCase()));
+  if (determination) rows = rows.filter(r => r.determination === determination);
+  if (fromDate)      rows = rows.filter(r => r.determinedAt >= fromDate);
+  if (toDate)        rows = rows.filter(r => r.determinedAt <= toDate + 'T23:59:59');
+
+  rows.sort((a,b) => b.determinedAt.localeCompare(a.determinedAt));
+
+  const runIds = [...new Set(siteHistory.map(r=>r.runId))].sort().reverse();
+
+  const detBadge = d => {
+    const map = { matched:'resolved', rejected:'no-match', 'bad-data':'no-match', escalated:'potential' };
+    return `<span class="badge ${map[d]||''}">${esc(d)}</span>`;
+  };
+
+  const el = document.getElementById('history-modal-body');
+  if (!el) return;
+
+  el.dataset.filterState = JSON.stringify({runId, rcn, determination, fromDate, toDate});
+
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">
+      <div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">Run ID</div>
+        <select style="padding:4px 6px;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg);color:var(--text);font-size:11px" onchange="renderHistoryTable(Object.assign(historyFilterState(),{runId:this.value}))">
+          <option value="">All runs</option>
+          ${runIds.map(r=>`<option value="${esc(r)}"${runId===r?' selected':''}>${esc(r)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">Determination</div>
+        <select style="padding:4px 6px;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg);color:var(--text);font-size:11px" onchange="renderHistoryTable(Object.assign(historyFilterState(),{determination:this.value}))">
+          <option value="">All</option>
+          <option value="matched"${determination==='matched'?' selected':''}>Matched</option>
+          <option value="rejected"${determination==='rejected'?' selected':''}>Rejected</option>
+          <option value="bad-data"${determination==='bad-data'?' selected':''}>Bad data</option>
+          <option value="escalated"${determination==='escalated'?' selected':''}>Escalated</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">RCN / Site name</div>
+        <input type="text" placeholder="Search…" value="${esc(rcn)}"
+          style="padding:4px 6px;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg);color:var(--text);font-size:11px;width:140px"
+          oninput="renderHistoryTable(Object.assign(historyFilterState(),{rcn:this.value}))">
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">From date</div>
+        <input type="date" value="${esc(fromDate)}"
+          style="padding:4px 6px;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg);color:var(--text);font-size:11px"
+          onchange="renderHistoryTable(Object.assign(historyFilterState(),{fromDate:this.value}))">
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">To date</div>
+        <input type="date" value="${esc(toDate)}"
+          style="padding:4px 6px;border:0.5px solid var(--border2);border-radius:5px;background:var(--bg);color:var(--text);font-size:11px"
+          onchange="renderHistoryTable(Object.assign(historyFilterState(),{toDate:this.value}))">
+      </div>
+      <div style="margin-left:auto;font-size:11px;color:var(--text2);align-self:center">${rows.length} record${rows.length!==1?'s':''}</div>
+    </div>
+    ${rows.length === 0
+      ? `<div style="text-align:center;padding:30px;color:var(--text2);font-size:12px">No history records match this filter.</div>`
+      : `<table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="background:var(--bg2)">
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Site</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">RCN</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Run ID</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Retailer</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Program</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Determination</th>
+            <th style="padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border)">Date</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(r=>`<tr style="border-bottom:0.5px solid var(--border)">
+              <td style="padding:5px 8px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.siteName)}">${esc(r.siteName)}</td>
+              <td style="padding:5px 8px;font-family:var(--mono);font-size:10px;color:var(--text2)">${esc(r.rcn)}</td>
+              <td style="padding:5px 8px;font-family:var(--mono);font-size:10px;color:var(--text2)">${esc(r.runId)}</td>
+              <td style="padding:5px 8px;font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.retailerName||'')}">${esc(r.retailerName||'—')}</td>
+              <td style="padding:5px 8px;font-size:10px">${esc(r.program||'—')}</td>
+              <td style="padding:5px 8px">${detBadge(r.determination)}</td>
+              <td style="padding:5px 8px;font-size:10px;color:var(--text2);white-space:nowrap">${new Date(r.determinedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`}`;
+}
+
+function historyFilterState() {
+  const el = document.getElementById('history-modal-body');
+  try { return JSON.parse(el.dataset.filterState || '{}'); } catch(e) { return {}; }
+}
+
+function exportHistoryCSV() {
+  if (!siteHistory.length) { alert('No history to export.'); return; }
+  const cols = ['rcn','runId','siteName','addr','city','state','zip','program','retailerName','falloutReason','determination','determinedAt','participantId','pdiSiteId'];
+  const header = cols.join(',');
+  const data = siteHistory.map(r => cols.map(c => `"${String(r[c]||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  downloadText(header + '\n' + data, `FalloutHistory_${new Date().toISOString().slice(0,10)}.csv`);
+}
+
+function clearHistory() {
+  if (!confirm(`Clear all ${siteHistory.length} history record${siteHistory.length!==1?'s':''}? This cannot be undone.`)) return;
+  siteHistory = [];
+  saveHistory();
+  updateHistoryBtn();
+  renderHistoryTable();
 }
 
 // ---- Boot ----
