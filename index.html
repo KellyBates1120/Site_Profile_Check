@@ -734,11 +734,8 @@ function renderMapsPane(site) {
   }
 
   if (mapsReady && mc) {
-    html += `<div id="site-map-${site.id}" style="height:240px;border-radius:var(--radius);border:0.5px solid var(--border);margin-top:12px;overflow:hidden;background:var(--bg2)"></div>
-    <div style="margin-top:6px;font-size:10px;color:var(--text2);display:flex;gap:12px">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E85D24;vertical-align:middle;margin-right:3px"></span>Altria coordinates</span>
-      ${mc.found ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${mc.conflict?'#8b2020':'#1a6b3c'};vertical-align:middle;margin-right:3px"></span>Google Maps found</span>` : ''}
-    </div>`;
+    html += `<div id="site-map-${site.id}" style="height:260px;border-radius:var(--radius);border:0.5px solid var(--border);margin-top:12px;overflow:hidden;background:var(--bg2)"></div>
+    <div id="site-map-legend-${site.id}" style="margin-top:8px"></div>`;
   }
 
   html += `<div style="margin-top:12px;font-size:11px;color:var(--text2);line-height:1.6"><strong>How this works:</strong> The matching engine calls <code style="font-family:var(--mono);font-size:10px;background:var(--bg2);padding:1px 4px;border-radius:3px">places.findPlaceFromQuery()</code> with the Altria store name and address. The returned coordinates become a third geo-match signal. If the returned business name differs significantly from the Altria name, the site is flagged as a conflict.</div>
@@ -747,14 +744,24 @@ function renderMapsPane(site) {
   if (mapsReady && mc) initSiteMap(site);
 }
 
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000, toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
 function initSiteMap(site) {
   const mapEl = document.getElementById(`site-map-${site.id}`);
+  const legendEl = document.getElementById(`site-map-legend-${site.id}`);
   if (!mapEl) return;
   const mc = mapsCache[site.id];
 
-  // Prefer Google Maps found coords for centering, fall back to Altria coords
-  const centerLat = (mc && mc.found && mc.lat) ? mc.lat : site.lat;
-  const centerLng = (mc && mc.found && mc.lng) ? mc.lng : site.lng;
+  const hasAltria = site.lat && site.lng;
+  const hasGoogle = mc && mc.found && mc.lat && mc.lng;
+  const centerLat = hasGoogle ? mc.lat : site.lat;
+  const centerLng = hasGoogle ? mc.lng : site.lng;
+
   if (!centerLat || !centerLng) {
     mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--text2)">No coordinates available for this site.</div>';
     return;
@@ -769,37 +776,98 @@ function initSiteMap(site) {
     fullscreenControl: true,
   });
 
-  // Orange pin — Altria reported coordinates
-  if (site.lat && site.lng) {
-    const altriaPin = new google.maps.marker.PinElement({
+  const infoWindow = new google.maps.InfoWindow();
+
+  // Orange "A" pin — Altria reported coordinates
+  let altriaMarker = null;
+  if (hasAltria) {
+    const pin = new google.maps.marker.PinElement({
       background: '#E85D24', borderColor: '#b03a10', glyphColor: '#fff', glyph: 'A'
     });
-    new google.maps.marker.AdvancedMarkerElement({
+    altriaMarker = new google.maps.marker.AdvancedMarkerElement({
       map, position: { lat: site.lat, lng: site.lng },
-      content: altriaPin.element, title: `Altria: ${site.name}`
+      content: pin.element, title: 'Altria location'
+    });
+    altriaMarker.addListener('click', () => {
+      infoWindow.setContent(`
+        <div style="font-size:12px;line-height:1.6;min-width:180px">
+          <div style="font-weight:700;color:#b03a10;margin-bottom:3px">🟠 Altria (A)</div>
+          <div style="font-weight:600">${esc(site.name)}</div>
+          <div style="color:#555">${esc(site.addr)}, ${site.city}, ${site.state} ${site.zip}</div>
+          <div style="font-size:10px;color:#888;margin-top:3px">${site.lat.toFixed(5)}, ${site.lng.toFixed(5)}</div>
+        </div>`);
+      infoWindow.open(map, altriaMarker);
     });
   }
 
-  // Green (confirmed) or red (conflict) pin — Google Maps found location
-  if (mc && mc.found && mc.lat && mc.lng) {
-    const gmPin = new google.maps.marker.PinElement({
-      background: mc.conflict ? '#8b2020' : '#1a6b3c',
-      borderColor: mc.conflict ? '#5a1010' : '#0d3d1f',
-      glyphColor: '#fff', glyph: 'G'
+  // Green (confirmed) or red (conflict) "G" pin — Google Maps result
+  let gmMarker = null;
+  if (hasGoogle) {
+    const color = mc.conflict ? '#8b2020' : '#1a6b3c';
+    const border = mc.conflict ? '#5a1010' : '#0d3d1f';
+    const pin = new google.maps.marker.PinElement({
+      background: color, borderColor: border, glyphColor: '#fff', glyph: 'G'
     });
-    new google.maps.marker.AdvancedMarkerElement({
+    gmMarker = new google.maps.marker.AdvancedMarkerElement({
       map, position: { lat: mc.lat, lng: mc.lng },
-      content: gmPin.element, title: `Google Maps: ${mc.name}`
+      content: pin.element, title: 'Google Maps result'
+    });
+    gmMarker.addListener('click', () => {
+      infoWindow.setContent(`
+        <div style="font-size:12px;line-height:1.6;min-width:180px">
+          <div style="font-weight:700;color:${color};margin-bottom:3px">${mc.conflict ? '🔴 Google Maps (G) — Conflict' : '🟢 Google Maps (G) — Confirmed'}</div>
+          <div style="font-weight:600">${esc(mc.name)}</div>
+          <div style="color:#555">${esc(mc.address)}</div>
+          <div style="font-size:10px;color:#888;margin-top:3px">${mc.lat.toFixed(5)}, ${mc.lng.toFixed(5)}</div>
+        </div>`);
+      infoWindow.open(map, gmMarker);
     });
   }
 
-  // If both pins exist and are different, fit bounds to show both
-  if (site.lat && site.lng && mc && mc.found && mc.lat && mc.lng &&
-      (Math.abs(site.lat - mc.lat) > 0.0001 || Math.abs(site.lng - mc.lng) > 0.0001)) {
-    const bounds = new google.maps.LatLngBounds();
-    bounds.extend({ lat: site.lat, lng: site.lng });
-    bounds.extend({ lat: mc.lat, lng: mc.lng });
-    map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+  // Draw a dashed line + compute distance when both pins exist and differ
+  let distMeters = null;
+  if (hasAltria && hasGoogle) {
+    distMeters = haversineMeters(site.lat, site.lng, mc.lat, mc.lng);
+    if (distMeters > 5) {
+      new google.maps.Polyline({
+        map,
+        path: [{ lat: site.lat, lng: site.lng }, { lat: mc.lat, lng: mc.lng }],
+        strokeColor: mc.conflict ? '#8b2020' : '#185FA5',
+        strokeOpacity: 0,
+        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.7, scale: 3 }, offset: '0', repeat: '12px' }],
+      });
+      // Fit both pins in view
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: site.lat, lng: site.lng });
+      bounds.extend({ lat: mc.lat, lng: mc.lng });
+      map.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 });
+    }
+  }
+
+  // Legend below the map
+  if (legendEl) {
+    const distLabel = distMeters != null
+      ? `<span style="font-weight:600;color:${distMeters>200?'var(--red)':distMeters>75?'var(--amber)':'var(--green)'}">↔ ${distMeters}m apart${distMeters>200?' — exceeds 200m threshold':distMeters>75?' — above 75m auto-match':' — within auto-match threshold'}</span>`
+      : '';
+    legendEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
+        <div style="padding:7px 10px;border-radius:5px;border:0.5px solid var(--border);background:var(--bg2)">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#E85D24;color:#fff;font-size:9px;font-weight:700;flex-shrink:0">A</span>
+            <span style="font-weight:600">Altria reported</span>
+          </div>
+          <div style="color:var(--text2);font-size:10px">${esc(site.addr)}, ${site.city} ${site.state}</div>
+          ${hasAltria ? `<div style="color:var(--text3);font-size:10px;font-family:var(--mono)">${site.lat.toFixed(5)}, ${site.lng.toFixed(5)}</div>` : '<div style="color:var(--text3);font-size:10px">No coordinates</div>'}
+        </div>
+        <div style="padding:7px 10px;border-radius:5px;border:0.5px solid ${hasGoogle?(mc.conflict?'var(--red-bd)':'var(--green-bd)'):'var(--border)'};background:${hasGoogle?(mc.conflict?'var(--red-bg)':'var(--green-bg)'):'var(--bg2)'}">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:${hasGoogle?(mc.conflict?'#8b2020':'#1a6b3c'):'#aaa'};color:#fff;font-size:9px;font-weight:700;flex-shrink:0">G</span>
+            <span style="font-weight:600">${hasGoogle ? (mc.conflict ? 'Google — Conflict' : 'Google — Confirmed') : 'Google — No result'}</span>
+          </div>
+          ${hasGoogle ? `<div style="color:var(--text2);font-size:10px">${esc(mc.name)}</div><div style="color:var(--text3);font-size:10px;font-family:var(--mono)">${mc.lat.toFixed(5)}, ${mc.lng.toFixed(5)}</div>` : '<div style="color:var(--text3);font-size:10px">No match found by Google</div>'}
+        </div>
+      </div>
+      ${distLabel ? `<div style="margin-top:6px;padding:5px 10px;border-radius:5px;background:var(--bg2);border:0.5px solid var(--border);font-size:11px">${distLabel} <span style="color:var(--text2);font-size:10px;margin-left:4px">Click either pin for details</span></div>` : ''}`;
   }
 }
 
